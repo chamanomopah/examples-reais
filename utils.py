@@ -31,8 +31,16 @@ def load_workflow(workflow_path):
         return json.load(f)
 
 
-async def run_workflow(workflow, workflow_name="workflow", client_id="python_client", save_outputs=True):
-    """Executa workflow no ComfyUI e monitora via WebSocket"""
+async def run_workflow(workflow, workflow_name="workflow", client_id="python_client", save_outputs=True, custom_output_dir=None):
+    """Executa workflow no ComfyUI e monitora via WebSocket
+
+    Args:
+        workflow: Dicionário do workflow ComfyUI
+        workflow_name: Nome do workflow para organização
+        client_id: ID do cliente para ComfyUI
+        save_outputs: Se True, baixa e salva os arquivos gerados
+        custom_output_dir: Diretório customizado para salvar arquivos (Path ou str)
+    """
 
     # Enviar workflow
     prompt_data = {
@@ -98,6 +106,7 @@ async def run_workflow(workflow, workflow_name="workflow", client_id="python_cli
         outputs = history[prompt_id].get("outputs", {})
 
         for node_id, node_output in outputs.items():
+            # Processar imagens
             if "images" in node_output:
                 for image_info in node_output["images"]:
                     filename = image_info["filename"]
@@ -114,8 +123,46 @@ async def run_workflow(workflow, workflow_name="workflow", client_id="python_cli
 
                         response = requests.get(f"{COMFYUI_SERVER}/view", params=params)
 
-                        # Criar diretório de saída
-                        output_dir = Path("outputs") / workflow_name
+                        # Criar diretório de saída (customizado ou padrão)
+                        if custom_output_dir:
+                            output_dir = Path(custom_output_dir)
+                        else:
+                            output_dir = Path("outputs") / workflow_name
+
+                        output_dir.mkdir(parents=True, exist_ok=True)
+
+                        output_path = output_dir / filename
+                        with open(output_path, 'wb') as f:
+                            f.write(response.content)
+
+                        saved_files.append(str(output_path))
+                        print(f"💾 Salvo: {output_path}")
+                    else:
+                        saved_files.append(filename)
+
+            # Processar áudio
+            if "audio" in node_output:
+                for audio_info in node_output["audio"]:
+                    filename = audio_info["filename"]
+                    subfolder = audio_info.get("subfolder", "")
+                    audio_type = audio_info.get("type", "output")
+
+                    # Baixar/salvar áudio
+                    if save_outputs:
+                        params = {
+                            "filename": filename,
+                            "subfolder": subfolder,
+                            "type": audio_type
+                        }
+
+                        response = requests.get(f"{COMFYUI_SERVER}/view", params=params)
+
+                        # Criar diretório de saída (customizado ou padrão)
+                        if custom_output_dir:
+                            output_dir = Path(custom_output_dir)
+                        else:
+                            output_dir = Path("outputs") / workflow_name
+
                         output_dir.mkdir(parents=True, exist_ok=True)
 
                         output_path = output_dir / filename

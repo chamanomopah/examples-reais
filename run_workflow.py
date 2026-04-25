@@ -130,12 +130,7 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
-    parser.add_argument(
-        'workflow',
-        nargs='?',
-        help='Nome do workflow (ex: z_image_turbo)'
-    )
-
+    # Primeiro parsear apenas os argumentos conhecidos
     parser.add_argument(
         '--list',
         action='store_true',
@@ -148,14 +143,34 @@ def parse_args():
         help='Não auto-atualizar config'
     )
 
-    # Parâmetros dinâmicos (todos os outros argumentos)
     parser.add_argument(
-        'params',
-        nargs=argparse.REMAINDER,
-        help='Parâmetros do workflow (ex: prompt="texto" width=1024)'
+        '--output-dir', '-o',
+        type=str,
+        default=None,
+        help='Diretório de saída customizado (ex: C:\\projects\\output)'
     )
 
-    return parser.parse_args()
+    parser.add_argument(
+        '--name', '-n',
+        type=str,
+        default=None,
+        help='Nome base do arquivo (ex: image1, audio1)'
+    )
+
+    # Parsear argumentos conhecidos
+    args, remaining = parser.parse_known_args()
+
+    # O primeiro argumento restante deve ser o workflow
+    workflow = None
+    if remaining and not remaining[0].startswith('-'):
+        workflow = remaining[0]
+        remaining = remaining[1:]  # Remover o workflow dos argumentos restantes
+
+    # Os argumentos restantes são os parâmetros do workflow
+    args.workflow = workflow
+    args.params = remaining
+
+    return args
 
 
 def parse_params(params_list):
@@ -229,6 +244,22 @@ async def main():
     # Parse parâmetros
     params = parse_params(args.params)
 
+    # Aplicar nome customizado se fornecido (prioridade sobre params)
+    if args.name:
+        # Encontrar o nó SaveImage ou PreviewAudio e modificar o filename_prefix
+        for node_id, node in workflow.items():
+            if isinstance(node, dict):
+                class_type = node.get("class_type", "")
+                if class_type == "SaveImage":
+                    # Aplicar diretamente no workflow antes dos params
+                    if "inputs" in node and "filename_prefix" in node["inputs"]:
+                        node["inputs"]["filename_prefix"] = args.name
+                    print(f"3.1 Nome base da imagem: {args.name}")
+                    break
+                elif class_type == "PreviewAudio":
+                    print(f"3.1 Nome base do áudio: {args.name}")
+                    break
+
     if params:
         print("3. Aplicando parâmetros:")
         workflow = modify_workflow_params(workflow, workflow_config, params)
@@ -241,12 +272,16 @@ async def main():
     print("4. Executando workflow...")
     print("-" * 50)
 
+    # Determinar diretório de saída
+    output_dir = Path(args.output_dir) if args.output_dir else None
+
     try:
         saved_files = await run_workflow(
             workflow=workflow,
             workflow_name=workflow_key,
             client_id=f"python_{workflow_key}",
-            save_outputs=True
+            save_outputs=True,
+            custom_output_dir=output_dir
         )
 
         print("-" * 50)
