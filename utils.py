@@ -1,199 +1,149 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Utils módulo para scripts ComfyUI
-Funções básicas para carregar workflows e executar no ComfyUI server
+Utilitários para integração com ComfyUI
 """
 
 import json
 import requests
-import websockets
 import asyncio
+import websockets
 from pathlib import Path
-from typing import Optional
+import time
 
 
 COMFYUI_SERVER = "http://127.0.0.1:8188"
-WEBSOCKET_URL = "ws://127.0.0.1:8188/ws"
-WORKFLOWS_DIR = r"C:\Users\JOSE\Downloads\confyui\ComfyUI_windows_portable\ComfyUI\user\default\workflows"
+WS_SERVER = "ws://127.0.0.1:8188/ws"
 
 
-def check_server(server_url: str = COMFYUI_SERVER) -> bool:
-    """Verifica se o ComfyUI server está rodando."""
+def check_server():
+    """Verifica se ComfyUI está rodando"""
     try:
-        response = requests.get(f"{server_url}/system_stats", timeout=5)
+        response = requests.get(f"{COMFYUI_SERVER}/system_stats", timeout=2)
         return response.status_code == 200
-    except Exception:
+    except:
         return False
 
 
-def load_workflow(filename: str, directory: str = None) -> dict:
-    """Carrega um workflow JSON do diretório especificado."""
-    if directory is None:
-        directory = WORKFLOWS_DIR
-
-    workflow_path = Path(directory) / filename
-
-    if not workflow_path.exists():
-        # Tentar no diretório atual
-        workflow_path = Path(filename)
-
-    if not workflow_path.exists():
-        raise FileNotFoundError(f"Workflow não encontrado: {filename}\nProcurado em: {directory}")
-
+def load_workflow(workflow_path):
+    """Carrega workflow JSON"""
     with open(workflow_path, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 
-async def run_workflow(
-    workflow: dict,
-    workflow_name: str = "workflow",
-    client_id: str = "python_client",
-    server_url: str = COMFYUI_SERVER,
-    websocket_url: str = WEBSOCKET_URL,
-    save_outputs: bool = False
-) -> list:
-    """
-    Executa um workflow no ComfyUI via WebSocket.
+async def run_workflow(workflow, workflow_name="workflow", client_id="python_client", save_outputs=True):
+    """Executa workflow no ComfyUI e monitora via WebSocket"""
 
-    Returns:
-        Lista de Path objects para os arquivos salvos
-    """
-    import aiohttp
+    # Enviar workflow
+    prompt_data = {
+        "prompt": workflow,
+        "client_id": client_id
+    }
+
+    response = requests.post(f"{COMFYUI_SERVER}/prompt", json=prompt_data)
+    result = response.json()
+
+    if "prompt_id" not in result:
+        raise Exception(f"Erro ao enviar workflow: {result}")
+
+    prompt_id = result["prompt_id"]
+    print(f"📝 Workflow enviado: {prompt_id}")
+
+    # Monitorar via WebSocket
+    print("⏳ Aguardando processamento...")
+
+    async with websockets.connect(WS_SERVER) as websocket:
+        while True:
+            try:
+                message = await asyncio.wait_for(websocket.recv(), timeout=30.0)
+                data = json.loads(message)
+
+                # Verificar tipo de mensagem
+                if data.get("type") == "executing":
+                    if data.get("data", {}).get("node") is None:
+                        print("✅ Processamento concluído!")
+                        break
+
+                # Mostrar progresso
+                elif data.get("type") == "progress":
+                    progress_data = data.get("data", {})
+                    value = progress_data.get("value", 0)
+                    max_value = progress_data.get("max", 100)
+                    print(f"🔄 Progresso: {value}/{max_value}")
+
+                # Mostrar execução de nós
+                elif data.get("type") == "execution_cached":
+                    print("💾 Usando cache")
+
+                elif data.get("type") == "executing":
+                    node_id = data.get("data", {}).get("node")
+                    if node_id:
+                        print(f"⚙️  Executando nó: {node_id}")
+
+            except asyncio.TimeoutError:
+                print("⚠️  Timeout na WebSocket, verificando status...")
+                break
+            except Exception as e:
+                print(f"⚠️  Erro no WebSocket: {e}")
+                break
+
+    # Obter resultados
+    print("📊 Buscando resultados...")
+    history_response = requests.get(f"{COMFYUI_SERVER}/history/{prompt_id}")
+    history = history_response.json()
 
     saved_files = []
 
-    # Preparar o prompt
-    prompt = workflow
-    print(f"  DEBUG: Enviando workflow com {len(prompt)} nós para ComfyUI...")
+    if prompt_id in history:
+        outputs = history[prompt_id].get("outputs", {})
 
-    # Conectar via WebSocket
-    async with websockets.connect(websocket_url) as websocket:
-        # Enviar prompt
-        data = {
-            "prompt": prompt,
-            "client_id": client_id
-        }
+        for node_id, node_output in outputs.items():
+            if "images" in node_output:
+                for image_info in node_output["images"]:
+                    filename = image_info["filename"]
+                    subfolder = image_info.get("subfolder", "")
+                    image_type = image_info.get("type", "output")
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{server_url}/prompt", json=data) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    raise Exception(f"Erro ao enviar prompt: {response.status}\nDetalhes: {error_text}")
+                    # Baixar/salvar imagem
+                    if save_outputs:
+                        params = {
+                            "filename": filename,
+                            "subfolder": subfolder,
+                            "type": image_type
+                        }
 
-                result = await response.json()
-                prompt_id = result.get("prompt_id")
+                        response = requests.get(f"{COMFYUI_SERVER}/view", params=params)
 
-                if not prompt_id:
-                    raise Exception("Não recebeu prompt_id")
+                        # Criar diretório de saída
+                        output_dir = Path("outputs") / workflow_name
+                        output_dir.mkdir(parents=True, exist_ok=True)
 
-                # Escutar mensagens
-                while True:
-                    try:
-                        message = await websocket.recv()
+                        output_path = output_dir / filename
+                        with open(output_path, 'wb') as f:
+                            f.write(response.content)
 
-                        if isinstance(message, str):
-                            msg_data = json.loads(message)
-                        else:
-                            continue
-
-                        msg_type = msg_data.get("type")
-
-                        if msg_type == "executing":
-                            # Execução em andamento
-                            node_id = msg_data.get("data", {}).get("node")
-
-                            if node_id is None:
-                                # Execução finalizada
-                                break
-
-                        elif msg_type == "execution_cached":
-                            # Nó executado do cache
-                            pass
-
-                        elif msg_type == "progress":
-                            # Progresso
-                            value = msg_data.get("data", {}).get("value", 0)
-                            max_value = msg_data.get("data", {}).get("max", 1)
-                            if max_value > 0:
-                                progress = (value / max_value) * 100
-                                print(f"  Progresso: {progress:.1f}%", end="\r")
-
-                        elif msg_type == "executed":
-                            # Nó executado
-                            node_id = msg_data.get("data", {}).get("node")
-                            output = msg_data.get("data", {}).get("output")
-
-                            if output and "images" in output:
-                                for img in output["images"]:
-                                    filename = img.get("filename")
-                                    subfolder = img.get("subfolder", "")
-                                    folder_type = img.get("type", "output")
-
-                                    if filename:
-                                        print(f"\n  ✓ Imagem gerada: {filename}")
-
-                                        if save_outputs:
-                                            file_path = await download_image(
-                                                filename,
-                                                subfolder,
-                                                folder_type,
-                                                server_url,
-                                                session
-                                            )
-                                            if file_path:
-                                                saved_files.append(file_path)
-
-                    except websockets.exceptions.ConnectionClosed:
-                        break
+                        saved_files.append(str(output_path))
+                        print(f"💾 Salvo: {output_path}")
+                    else:
+                        saved_files.append(filename)
 
     return saved_files
 
 
-async def download_image(
-    filename: str,
-    subfolder: str,
-    folder_type: str,
-    server_url: str = COMFYUI_SERVER,
-    session = None
-) -> Optional[Path]:
-    """Faz download de uma imagem gerada pelo ComfyUI."""
-    import aiohttp
+def get_workflow_params(workflow_path):
+    """Extrai parâmetros modificáveis de um workflow"""
+    with open(workflow_path, 'r', encoding='utf-8') as f:
+        workflow = json.load(f)
 
-    params = {
-        "filename": filename,
-        "subfolder": subfolder,
-        "type": folder_type
-    }
+    params = {}
 
-    if session is None:
-        async with aiohttp.ClientSession() as sess:
-            async with sess.get(f"{server_url}/view", params=params) as response:
-                if response.status == 200:
-                    # Criar diretório de saída
-                    output_dir = Path("outputs") / workflow_name
-                    output_dir.mkdir(parents=True, exist_ok=True)
+    for node_id, node in workflow.items():
+        if isinstance(node, dict) and "inputs" in node:
+            for key, value in node["inputs"].items():
+                # Não incluir links (listas)
+                if not isinstance(value, list):
+                    if node_id not in params:
+                        params[node_id] = {}
+                    params[node_id][key] = value
 
-                    file_path = output_dir / filename
-
-                    # Salvar arquivo
-                    with open(file_path, 'wb') as f:
-                        f.write(await response.read())
-
-                    return file_path
-    else:
-        async with session.get(f"{server_url}/view", params=params) as response:
-            if response.status == 200:
-                # Criar diretório de saída
-                output_dir = Path("outputs") / workflow_name
-                output_dir.mkdir(parents=True, exist_ok=True)
-
-                file_path = output_dir / filename
-
-                # Salvar arquivo
-                with open(file_path, 'wb') as f:
-                    f.write(await response.read())
-
-                return file_path
-
-    return None
+    return params

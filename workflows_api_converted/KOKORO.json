@@ -1,0 +1,39 @@
+{
+  "10": {
+    "inputs": {
+      "speaker_name": "am_onyx"
+    },
+    "class_type": "KokoroSpeaker",
+    "_meta": {
+      "title": "Kokoro Speaker"
+    }
+  },
+  "12": {
+    "inputs": {
+      "audioUI": "/api/view?filename=ComfyUI_temp_ttsrf_00001_.flac&type=temp&subfolder=&rand=0.5192018984067907",
+      "audio": [
+        "20",
+        0
+      ]
+    },
+    "class_type": "PreviewAudio",
+    "_meta": {
+      "title": "Preview Audio"
+    }
+  },
+  "20": {
+    "inputs": {
+      "text": "hey",
+      "speed": 1,
+      "lang": "English",
+      "speaker": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "KokoroGenerator",
+    "_meta": {
+      "title": "Kokoro Generator"
+    }
+  }
+}

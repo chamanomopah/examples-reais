@@ -1,0 +1,88 @@
+{
+  "kokoro": {
+    "file": "KOKORO.json",
+    "params": {
+      "kokorospeaker": {
+        "node_type": "KokoroSpeaker",
+        "node_id": "10",
+        "speaker_name": {
+          "field": "inputs.speaker_name"
+        }
+      },
+      "previewaudio": {
+        "node_type": "PreviewAudio",
+        "node_id": "12",
+        "audioUI": {
+          "field": "inputs.audioUI"
+        }
+      },
+      "kokorogenerator": {
+        "node_type": "KokoroGenerator",
+        "node_id": "20",
+        "text": {
+          "field": "inputs.text"
+        },
+        "speed": {
+          "field": "inputs.speed"
+        },
+        "lang": {
+          "field": "inputs.lang"
+        }
+      }
+    }
+  },
+  "z_image_turbo": {
+    "file": "Z-IMAGE-TURBO.json",
+    "params": {
+      "saveimage": {
+        "node_type": "SaveImage",
+        "node_id": "9",
+        "filename_prefix": {
+          "field": "inputs.filename_prefix"
+        }
+      },
+      "cliptextencode": {
+        "node_type": "CLIPTextEncode",
+        "node_id": "57:27",
+        "text": {
+          "field": "inputs.text"
+        }
+      },
+      "emptysd3latentimage": {
+        "node_type": "EmptySD3LatentImage",
+        "node_id": "57:13",
+        "width": {
+          "field": "inputs.width"
+        },
+        "height": {
+          "field": "inputs.height"
+        },
+        "batch_size": {
+          "field": "inputs.batch_size"
+        }
+      },
+      "ksampler": {
+        "node_type": "KSampler",
+        "node_id": "57:3",
+        "seed": {
+          "field": "inputs.seed"
+        },
+        "steps": {
+          "field": "inputs.steps"
+        },
+        "cfg": {
+          "field": "inputs.cfg"
+        },
+        "sampler_name": {
+          "field": "inputs.sampler_name"
+        },
+        "scheduler": {
+          "field": "inputs.scheduler"
+        },
+        "denoise": {
+          "field": "inputs.denoise"
+        }
+      }
+    }
+  }
+}
