@@ -24,55 +24,46 @@ def split_script(input_path, output_path="script_cutted.md"):
     # Junta tudo
     text = " ".join(cleaned)
 
-    # Divide em sentenças completas
-    result = []
+    # Divide em sentenças (preservando aspas inteiras)
+    sentences = []
     current = ""
-    quote_depth = 0  # rastreia se estamos dentro de aspas
+    quote_depth = 0
 
-    i = 0
-    while i < len(text):
-        char = text[i]
-
-        # Rastreia aspas
+    for i, char in enumerate(text):
         if char == '"':
             quote_depth += 1
-            current += char
-            i += 1
-            continue
 
-        # Adiciona caractere
         current += char
 
-        # Divide apenas quando fora de aspas e temos pontuação final
+        # Divide apenas fora de aspas
         if quote_depth % 2 == 0 and char in '.!?' and i + 1 < len(text):
             next_char = text[i + 1]
-            # Próximo é espaço ou aspas de fechamento ou fim
             if next_char in ' "\'\n':
-                # Verifica se não é abreviação (Dr., Mr., etc.)
-                if len(current) > 3 and not current[-3:].isupper():
+                # Evita abreviações comuns
+                if len(current) > 4 and not (current[-3] == '.' and current[-2:].isupper()):
                     sentence = current.strip()
                     if sentence:
-                        result.append(sentence)
+                        sentences.append(sentence)
                     current = ""
 
-        i += 1
-
-    # Adiciona o restante
     if current.strip():
-        remaining = current.strip()
+        sentences.append(current.strip())
 
-        # Divide o resto em pedaços razoáveis
-        # Se contém aspas, divide por dentro das aspas
-        if '"' in remaining:
-            parts = re.split(r'("\w[^"]*\.")', remaining)
+    # Pós-processa: separa aspas do texto ao redor
+    result = []
+    for sent in sentences:
+        # Se tem aspas, divide: antes, aspas, depois
+        if '"' in sent:
+            # Encontra todas as aspas
+            parts = re.split(r'("[^"]+")', sent)
             for p in parts:
                 p = p.strip()
-                if p and p not in ('"', '" '):
+                if p and p != '"':
                     result.append(p)
         else:
-            result.append(remaining)
+            result.append(sent)
 
-    # Remove duplicatas e vazias
+    # Remove vazias e duplicatas
     final = []
     for r in result:
         r = r.strip()
