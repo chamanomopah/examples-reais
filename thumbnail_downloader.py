@@ -10,9 +10,9 @@ Supports multiple quality levels:
 - default:   120x90 (lowest)
 
 Usage:
-    python youtube_thumbnail_downloader.py "https://www.youtube.com/watch?v=VIDEO_ID"
-    python youtube_thumbnail_downloader.py "https://youtu.be/VIDEO_ID" --quality high
-    python youtube_thumbnail_downloader.py "URL" --output my_thumbnail.jpg
+    python thumbnail_downloader.py "https://www.youtube.com/watch?v=VIDEO_ID"
+    python thumbnail_downloader.py "https://youtu.be/VIDEO_ID" --quality high
+    python thumbnail_downloader.py "URL" --output my_thumbnail.jpg
 """
 
 import sys
@@ -227,10 +227,11 @@ Quality Levels:
   default  120x90   (lowest quality, always exists)
 
 Examples:
-  python youtube_thumbnail_downloader.py "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-  python youtube_thumbnail_downloader.py "https://youtu.be/dQw4w9WgXcQ" --quality high
-  python youtube_thumbnail_downloader.py "URL" --output my_thumbnail.jpg
-  python youtube_thumbnail_downloader.py "URL" --quality maxres --no-fallback
+  python thumbnail_downloader.py "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+  python thumbnail_downloader.py "https://youtu.be/dQw4w9WgXcQ" --quality high
+  python thumbnail_downloader.py "URL" --output my_thumbnail.jpg
+  python thumbnail_downloader.py "URL" --quality maxres --no-fallback
+  python thumbnail_downloader.py "URL" --output-dir "C:/output/path"
         """
     )
     
@@ -238,8 +239,10 @@ Examples:
     parser.add_argument('-q', '--quality', default='high',
                         choices=['maxres', 'high', 'medium', 'default'],
                         help='Thumbnail quality (default: high)')
-    parser.add_argument('-o', '--output', 
-                        help='Output file path (default: thumbnails/<video_id>_<quality>.jpg)')
+    parser.add_argument('-od', '--output-dir',
+                        help='Output directory where thumbnail will be saved')
+    parser.add_argument('-o', '--output',
+                        help='Output file name (default: <video_id>_<quality>.jpg, used with --output-dir)')
     parser.add_argument('--no-fallback', action='store_true',
                         help='Do not fallback to lower quality if preferred is unavailable')
     parser.add_argument('--check-only', action='store_true',
@@ -268,7 +271,14 @@ Examples:
     print()
     
     # Determine output path
-    if args.output:
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        # Usa args.output como nome do arquivo, ou default <video_id>_<quality>.jpg
+        filename = args.output if args.output else f"{video_id}_{args.quality}.jpg"
+        output_path = output_dir / filename
+    elif args.output:
+        # Comportamento original: args.output é o caminho completo
         output_path = Path(args.output)
     else:
         # Create thumbnails directory

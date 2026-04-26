@@ -7,6 +7,7 @@ Usage:
     python video_frame_extractor.py "https://www.youtube.com/watch?v=VIDEO_ID"
     python video_frame_extractor.py "file:///C:/Users/JOSE/Videos/video.mp4"
     python video_frame_extractor.py "C:/Videos/video.mp4"
+    python video_frame_extractor.py "video_url" --frames 10  # Extract 10 equally distributed frames
 """
 
 import cv2
@@ -139,23 +140,28 @@ def extrair_id_video(url: str) -> str:
     return limpar_nome_arquivo(nome_arquivo) if nome_arquivo else "video_desconhecido"
 
 
-def criar_pasta_saida(id_video: str) -> Path:
+def criar_pasta_saida(id_video: str, output_dir: str = None) -> Path:
     """
     Cria uma pasta específica para os frames do vídeo.
-    
+
     Args:
         id_video: Identificador único do vídeo
-        
+        output_dir: Diretório base onde criar a pasta (opcional)
+
     Returns:
         Path object da pasta criada
     """
-    # Cria pasta na estrutura: frames/<id_video>/
-    pasta_base = Path("frames")
-    pasta_base.mkdir(exist_ok=True)
-    
+    # Se output_dir for especificado, usa ele como base
+    if output_dir:
+        pasta_base = Path(output_dir)
+    else:
+        # Cria pasta na estrutura: frames/<id_video>/
+        pasta_base = Path("frames")
+    pasta_base.mkdir(parents=True, exist_ok=True)
+
     pasta_saida = pasta_base / id_video
     pasta_saida.mkdir(exist_ok=True)
-    
+
     print(f"Pasta criada: {pasta_saida.absolute()}")
     return pasta_saida
 
@@ -359,66 +365,107 @@ def baixar_video(url: str, verbose: bool = False) -> str:
                 raise
 
 
-def extrair_frames(caminho_video: str, pasta_saida: Path) -> int:
+def extrair_frames(caminho_video: str, pasta_saida: Path, frames_por_segundo: int = 1, num_frames: int = None) -> int:
     """
-    Extrai frames do vídeo a cada segundo.
-    
+    Extrai frames do vídeo.
+
     Args:
         caminho_video: Caminho do arquivo de vídeo
         pasta_saida: Pasta onde os frames serão salvos
-        
+        frames_por_segundo: Frames a extrair por segundo (default: 1)
+        num_frames: Número total de frames igualmente distribuídos (exclui frames_por_segundo)
+
     Returns:
         Número de frames extraídos
     """
     print(f"Processando video: {caminho_video}")
-    
+
     # Abre o vídeo
     captura = cv2.VideoCapture(caminho_video)
-    
+
     if not captura.isOpened():
         raise Exception("Nao foi possivel abrir o arquivo de video")
-    
+
     # Obtém propriedades do vídeo
     fps = captura.get(cv2.CAP_PROP_FPS)
     total_frames = int(captura.get(cv2.CAP_PROP_FRAME_COUNT))
     duracao_segundos = total_frames / fps if fps > 0 else 0
-    
+
     print(f"Informacoes do video:")
     print(f"   - FPS: {fps:.2f}")
     print(f"   - Total de frames: {total_frames}")
-    print(f"   - Duracao: {duracao_segundos:.2f} segundos")
-    
-    # Calcula um frame a cada segundo
-    intervalo_frames = int(fps)  # Frames a pular (1 frame por segundo)
-    
-    frame_count = 0
+    print(f"   - Duracao: {duracao_segundos:.2f} segundos ({duracao_segundos/60:.2f} minutos)")
+
     salvo_count = 0
-    
-    while True:
-        # Define a posição do próximo frame (a cada segundo)
-        captura.set(cv2.CAP_PROP_POS_FRAMES, frame_count)
-        
-        ret, frame = captura.read()
-        
-        if not ret:
-            break  # Fim do vídeo
-        
-        # Salva o frame
-        timestamp_segundos = frame_count / fps
-        nome_arquivo = pasta_saida / f"frame_{timestamp_segundos:06.2f}s.jpg"
-        
-        cv2.imwrite(str(nome_arquivo), frame)
-        salvo_count += 1
-        
-        # Mostra progresso a cada 10 frames
-        if salvo_count % 10 == 0:
-            print(f"   Extraido frame {salvo_count} ({timestamp_segundos:.1f}s)")
-        
-        # Avança para o próximo segundo
-        frame_count += intervalo_frames
-    
+
+    if num_frames is not None:
+        # Modo: extrair N frames igualmente distribuídos
+        print(f"   - Modo: {num_frames} frames igualmente distribuídos")
+
+        intervalo_segundos = duracao_segundos / num_frames
+        print(f"   - Intervalo: {intervalo_segundos:.2f} segundos entre frames")
+
+        for i in range(num_frames):
+            # Calcula o timestamp para este frame
+            timestamp_segundos = intervalo_segundos * (i + 1)
+
+            # Evita extrair além da duração do vídeo
+            if timestamp_segundos >= duracao_segundos:
+                timestamp_segundos = duracao_segundos - 0.1
+
+            # Calcula o número do frame
+            frame_num = int(timestamp_segundos * fps)
+
+            # Define a posição do frame
+            captura.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+
+            ret, frame = captura.read()
+
+            if not ret:
+                break
+
+            # Salva o frame
+            minutos = int(timestamp_segundos // 60)
+            segundos = int(timestamp_segundos % 60)
+            nome_arquivo = pasta_saida / f"frame_{i+1:03d}_{minutos:02d}m{segundos:02d}s.jpg"
+
+            cv2.imwrite(str(nome_arquivo), frame)
+            salvo_count += 1
+
+            print(f"   Frame {salvo_count}/{num_frames} extraído em {minutos:02d}m{segundos:02d}s")
+    else:
+        # Modo original: extrair frames a cada X segundos
+        print(f"   - Modo: {frames_por_segundo} frame(s) por segundo")
+
+        intervalo_frames = int(fps / frames_por_segundo) if frames_por_segundo > 0 else int(fps)
+
+        frame_count = 0
+
+        while True:
+            # Define a posição do próximo frame
+            captura.set(cv2.CAP_PROP_POS_FRAMES, frame_count)
+
+            ret, frame = captura.read()
+
+            if not ret:
+                break
+
+            # Salva o frame
+            timestamp_segundos = frame_count / fps
+            nome_arquivo = pasta_saida / f"frame_{timestamp_segundos:06.2f}s.jpg"
+
+            cv2.imwrite(str(nome_arquivo), frame)
+            salvo_count += 1
+
+            # Mostra progresso a cada 10 frames
+            if salvo_count % 10 == 0:
+                print(f"   Extraido frame {salvo_count} ({timestamp_segundos:.1f}s)")
+
+            # Avança para o próximo intervalo
+            frame_count += intervalo_frames
+
     captura.release()
-    
+
     return salvo_count
 
 
@@ -431,7 +478,7 @@ def limpar_arquivo_temporario(caminho: str):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Extract frames from videos at 1-second intervals',
+        description='Extract frames from videos at 1-second intervals or equally distributed frames',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -439,13 +486,19 @@ Examples:
   python video_frame_extractor.py "file:///C:/Users/JOSE/Videos/video.mp4"
   python video_frame_extractor.py "C:/Videos/video.mp4"
   python video_frame_extractor.py "/home/user/videos/video.mp4"
+  python video_frame_extractor.py "video_url" --frames 10  # 10 equally distributed frames
+  python video_frame_extractor.py "video_url" --frames 5   # 5 equally distributed frames
+  python video_frame_extractor.py "video_url" --output-dir "C:/output/path"  # custom output directory
         """
     )
     
     parser.add_argument('url', help='Video URL or file path (supports: http/https, file:///, local paths)')
+    parser.add_argument('-od', '--output-dir', help='Output directory where frames folder will be created')
     parser.add_argument('-o', '--output', help='Output folder name (default: auto-generated based on video ID)')
     parser.add_argument('-f', '--fps', type=int, default=1,
                         help='Frames per second to extract (default: 1)')
+    parser.add_argument('--frames', type=int, default=None,
+                        help='Number of frames equally distributed throughout video (overrides --fps)')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Enable verbose output (show yt-dlp details)')
     parser.add_argument('--debug', action='store_true',
@@ -459,6 +512,7 @@ Examples:
         print(f"[DEBUG] URL: {args.url}")
         print(f"[DEBUG] Output: {args.output}")
         print(f"[DEBUG] FPS: {args.fps}")
+        print(f"[DEBUG] Frames (distribuídos): {args.frames}")
         print(f"[DEBUG] Verbose: {args.verbose}")
         print()
     
@@ -486,7 +540,7 @@ Examples:
     print()
     
     # 3. Cria pasta para os frames
-    pasta_output = criar_pasta_saida(id_video)
+    pasta_output = criar_pasta_saida(id_video, args.output_dir)
     print()
     
     # 4. Determina o caminho do arquivo de vídeo
@@ -512,7 +566,7 @@ Examples:
         print()
         
         # 5. Extrai os frames
-        frames_extraidos = extrair_frames(video_file, pasta_output)
+        frames_extraidos = extrair_frames(video_file, pasta_output, frames_por_segundo=args.fps, num_frames=args.frames)
         
         print()
         print("=" * 60)

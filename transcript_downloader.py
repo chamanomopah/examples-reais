@@ -4,8 +4,8 @@ YouTube Transcript Downloader
 A simple script to download and format YouTube video transcripts.
 
 Usage:
-    python youtube_transcript_downloader.py "https://www.youtube.com/watch?v=VIDEO_ID"
-    python youtube_transcript_downloader.py "https://youtu.be/VIDEO_ID"
+    python transcript_downloader.py "https://www.youtube.com/watch?v=VIDEO_ID"
+    python transcript_downloader.py "https://youtu.be/VIDEO_ID"
 """
 
 import sys
@@ -214,14 +214,17 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python youtube_transcript_downloader.py "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-  python youtube_transcript_downloader.py "https://youtu.be/dQw4w9WgXcQ" --language pt
-  python youtube_transcript_downloader.py "URL" --output my_transcript.txt
+  python transcript_downloader.py "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+  python transcript_downloader.py "https://youtu.be/dQw4w9WgXcQ" --language pt
+  python transcript_downloader.py "URL" --output my_transcript.txt
+  python transcript_downloader.py "URL" --output-dir "C:/output/path"
         """
     )
     
     parser.add_argument('url', help='YouTube video URL')
-    parser.add_argument('-o', '--output', default='transcript.txt', 
+    parser.add_argument('-od', '--output-dir',
+                        help='Output directory where transcript will be saved')
+    parser.add_argument('-o', '--output', default='transcript.txt',
                         help='Output file name (default: transcript.txt)')
     parser.add_argument('-l', '--language', default='auto',
                         help='Language preference (default: auto-detect, tries PT first then EN)')
@@ -253,7 +256,18 @@ Examples:
         formatted = format_transcript_organic(transcript_data)
 
         # Save to file (silent - no output)
-        with open(args.output, 'w', encoding='utf-8') as f:
+        from pathlib import Path
+
+        # Determina o caminho completo do arquivo
+        if args.output_dir:
+            output_dir = Path(args.output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = output_dir / args.output
+        else:
+            # Comportamento original: usa args.output como caminho (relativo ou absoluto)
+            output_path = Path(args.output)
+
+        with open(output_path, 'w', encoding='utf-8') as f:
             f.write(formatted)
 
         # Display in terminal - ONLY the transcript, nothing else

@@ -4,9 +4,9 @@ YouTube Channel Scraper
 Lista todos vídeos do canal ordenados por views (decrescente), retorna top 3.
 
 Usage:
-    python youtube_channel_scraper.py "https://www.youtube.com/@channelname/videos"
-    python youtube_channel_scraper.py "https://www.youtube.com/channel/UC..." --limit 5
-    python youtube_channel_scraper.py "URL" --output videos.json
+    python channel_videos_scraper.py "https://www.youtube.com/@channelname/videos"
+    python channel_videos_scraper.py "https://www.youtube.com/channel/UC..." --limit 5
+    python channel_videos_scraper.py "URL" --output videos.json
 """
 
 import sys
@@ -167,17 +167,20 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python youtube_channel_scraper.py "https://www.youtube.com/@PsychologyIsSimplified/videos"
-  python youtube_channel_scraper.py "https://www.youtube.com/@channelname/videos" --limit 5
-  python youtube_channel_scraper.py "URL" --output videos.json
+  python channel_videos_scraper.py "https://www.youtube.com/@PsychologyIsSimplified/videos"
+  python channel_videos_scraper.py "https://www.youtube.com/@channelname/videos" --limit 5
+  python channel_videos_scraper.py "URL" --output videos.json
+  python channel_videos_scraper.py "URL" --output-dir "C:/output/path" --output videos.json
         """
     )
     
     parser.add_argument('url', help='YouTube channel URL')
     parser.add_argument('-l', '--limit', type=int, default=3,
                         help='Number of top videos to return (default: 3)')
-    parser.add_argument('-o', '--output', 
-                        help='Output JSON file path (optional)')
+    parser.add_argument('-od', '--output-dir',
+                        help='Output directory where the JSON file will be saved')
+    parser.add_argument('-o', '--output',
+                        help='Output JSON file name (default: videos.json, used with --output-dir)')
     parser.add_argument('--json-only', action='store_true',
                         help='Output only JSON (no text)')
     
@@ -205,10 +208,23 @@ Examples:
     json_output = json.dumps(videos, indent=2, ensure_ascii=False)
     
     # Salva em arquivo se solicitado
-    if args.output:
-        with open(args.output, 'w', encoding='utf-8') as f:
+    if args.output or args.output_dir:
+        from pathlib import Path
+
+        # Determina o caminho completo do arquivo
+        if args.output_dir:
+            output_dir = Path(args.output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            # Usa args.output como nome do arquivo, ou default 'videos.json'
+            filename = args.output if args.output else 'videos.json'
+            output_path = output_dir / filename
+        else:
+            # Comportamento original: args.output é o caminho completo
+            output_path = Path(args.output)
+
+        with open(output_path, 'w', encoding='utf-8') as f:
             f.write(json_output)
-        print(f"✅ Saved to: {args.output}")
+        print(f"✅ Saved to: {output_path.absolute()}")
     
     # Imprime JSON
     if args.json_only:
