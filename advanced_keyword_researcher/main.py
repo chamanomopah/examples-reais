@@ -36,8 +36,7 @@ def cli():
 
 @cli.command()
 @click.argument("keyword")
-@click.option("--markdown", "fmt", flag_value="markdown", default=False, help="Output as markdown")
-@click.option("--json", "fmt", flag_value="json", default=True, help="Output as JSON (default)")
+@click.option("--output", "output_fmt", type=click.Choice(["json", "markdown", "excel"], case_sensitive=False), default="json", help="Output format (default: json)")
 @click.option("--output", "output_file", type=click.Path(), default=None, help="Save to specific file path")
 @click.option("--stdout", "use_stdout", is_flag=True, default=False, help="Force output to terminal")
 @click.option("--skip-llm", is_flag=True, default=False, help="Skip LLM analysis")

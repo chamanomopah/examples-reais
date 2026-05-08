@@ -1,76 +1,70 @@
-# advanced_keyword_researcher
+# Advanced Keyword Researcher
 
-Análise de nicho YouTube via API (YouTube Data API v3 + Gemini LLM).
+Ferramenta de análise de nicho para YouTube. Coleta dados via YouTube Data API v3 e gera insights com Gemini LLM — ideal para planejamento de conteúdo em canais faceless.
 
-## Setup
+## Instalação
 
 ```bash
 pip install -r requirements.txt
 ```
 
-API keys em `C:\Users\JOSE\.alfredo\.env`:
+API keys necessárias em `C:\Users\JOSE\.alfredo\.env`:
 - `YOUTUBE_API_KEY` — YouTube Data API v3
-- `GEMINI_API_KEY` — Google Gemini (LLM analysis)
+- `GEMINI_API_KEY` — Google Gemini
 
 ## Uso
 
-A partir de `.scripts/`:
 ```bash
+# Análise rápida (economy mode, ~103 quota units)
 py advanced_keyword_researcher.py "psychology" --markdown
+
+# Análise completa (full mode, ~406 quota units)
 py advanced_keyword_researcher.py "psychology of money" --markdown --full
+
+# Sem LLM (economiza chamadas Gemini)
 py advanced_keyword_researcher.py "psychology" --skip-llm --markdown
 ```
 
-Diretamente em `advanced_keyword_researcher/`:
-```bash
-python main.py "psychology" --markdown
-```
+## Parâmetros
 
-### Flags
+| Flag | Descrição |
+|------|-----------|
+| `--markdown` | Saída em markdown (padrão: JSON) |
+| `--full` | Full mode (~406 quota). Padrão: economy (~103) |
+| `--skip-llm` | Pula análise Gemini |
+| `--stdout` | Imprime no terminal em vez de salvar |
+| `--output FILE` | Caminho customizado de saída |
+| `--no-cache` | Ignora cache |
+| `--cache-ttl H` | TTL do cache em horas (padrão: 24) |
+| `--pages N` | Páginas de search no modo full (padrão: 2) |
+| `--region CODE` | País alvo ISO 3166-1 alpha-2 (padrão: US) |
+| `--last-days N` | Filtra vídeos dos últimos N dias |
 
-| Flag | Default | Descrição |
-|------|---------|-----------|
-| `--markdown` | off | Saída em markdown (default: JSON) |
-| `--full` | off | Full mode (~406 quota units). Default: economy (~103) |
-| `--skip-llm` | off | Pula análise Gemini |
-| `--stdout` | off | Imprime no terminal em vez de salvar |
-| `--output FILE` | auto | Caminho customizado de saída |
-| `--no-cache` | off | Ignora cache |
-| `--cache-ttl H` | 24 | TTL do cache em horas |
-| `--pages N` | 2 | Páginas de search (modo full) |
-| `--region CODE` | US | País alvo (ISO 3166-1 alpha-2) |
-| `--last-days N` | 0 | Filtra vídeos dos últimos N dias |
-
-### Cache
+## Cache
 
 ```bash
-py advanced_keyword_researcher.py clear-cache              # limpa todo cache
-py advanced_keyword_researcher.py clear-cache psychology   # limpa cache de 1 keyword
+py advanced_keyword_researcher.py clear-cache              # limpa tudo
+py advanced_keyword_researcher.py clear-cache psychology   # limpa por keyword
 ```
 
-## Output
+## Consumo de Quota
 
-Arquivos salvos em `advanced_keyword_researcher/output/`: `{keyword}_{periodo}[_full][_nollm].{ext}`
-
-## Custo de Quota
-
-| Modo | Unidades/keyword | Keywords/dia (10K quota) |
-|------|-----------------|-------------------------|
-| Economy (default) | ~103 | ~97 |
+| Modo | Por keyword | Keywords/dia (10K quota) |
+|------|-------------|--------------------------|
+| Economy (padrão) | ~103 | ~97 |
 | Full | ~406 | ~24 |
-| Cache hit | 0 | ilimitado |
+| Cache hit | 0 | Ilimitado |
 
-## Estrutura
+## Arquitetura
 
-```
-advanced_keyword_researcher/
-  main.py          CLI + orquestração
-  config.py        Constants, thresholds, cache config
-  collector.py     YouTube Data API v3
-  scorer.py        Algoritmos (trend, opportunity, median, duration, market)
-  analyzer.py      Gemini LLM (topics, audience, psychographics)
-  formatter.py     JSON assembly + markdown
-  cache.py         Cache file-based
-  output/          Resultados salvos
-  .cache/          Cache de queries
-```
+| Arquivo | Responsabilidade |
+|---------|-----------------|
+| `main.py` | CLI + orquestração |
+| `config.py` | Constantes, thresholds, configuração de cache |
+| `collector.py` | Coleta de dados (YouTube Data API v3) |
+| `scorer.py` | Algoritmos de scoring (trend, opportunity, median, duration, market) |
+| `analyzer.py` | Análise via Gemini LLM (topics, audience, psychographics) |
+| `formatter.py` | Montagem JSON + formatação markdown |
+| `cache.py` | Cache baseado em arquivo |
+
+Resultados em `output/` · Cache em `.cache/`
