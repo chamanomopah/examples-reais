@@ -1,4 +1,4 @@
-"""File-based cache for research_plus results."""
+"""File-based cache for advanced_keyword_researcher results."""
 
 import hashlib
 import json

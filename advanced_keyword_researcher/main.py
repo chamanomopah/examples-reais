@@ -1,4 +1,4 @@
-"""CLI entry point for research_plus."""
+"""CLI entry point for advanced_keyword_researcher."""
 
 import json
 import os

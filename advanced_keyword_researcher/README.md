@@ -1,4 +1,4 @@
-# research_plus
+# advanced_keyword_researcher
 
 Análise de nicho YouTube via API (YouTube Data API v3 + Gemini LLM).
 
@@ -16,12 +16,12 @@ API keys em `C:\Users\JOSE\.alfredo\.env`:
 
 A partir de `.scripts/`:
 ```bash
-py research_plus.py "psychology" --markdown
-py research_plus.py "psychology of money" --markdown --full
-py research_plus.py "psychology" --skip-llm --markdown
+py advanced_keyword_researcher.py "psychology" --markdown
+py advanced_keyword_researcher.py "psychology of money" --markdown --full
+py advanced_keyword_researcher.py "psychology" --skip-llm --markdown
 ```
 
-Diretamente em `research_plus/`:
+Diretamente em `advanced_keyword_researcher/`:
 ```bash
 python main.py "psychology" --markdown
 ```
@@ -44,13 +44,13 @@ python main.py "psychology" --markdown
 ### Cache
 
 ```bash
-py research_plus.py clear-cache              # limpa todo cache
-py research_plus.py clear-cache psychology   # limpa cache de 1 keyword
+py advanced_keyword_researcher.py clear-cache              # limpa todo cache
+py advanced_keyword_researcher.py clear-cache psychology   # limpa cache de 1 keyword
 ```
 
 ## Output
 
-Arquivos salvos em `research_plus/output/`: `{keyword}_{periodo}[_full][_nollm].{ext}`
+Arquivos salvos em `advanced_keyword_researcher/output/`: `{keyword}_{periodo}[_full][_nollm].{ext}`
 
 ## Custo de Quota
 
@@ -63,7 +63,7 @@ Arquivos salvos em `research_plus/output/`: `{keyword}_{periodo}[_full][_nollm].
 ## Estrutura
 
 ```
-research_plus/
+advanced_keyword_researcher/
   main.py          CLI + orquestração
   config.py        Constants, thresholds, cache config
   collector.py     YouTube Data API v3
