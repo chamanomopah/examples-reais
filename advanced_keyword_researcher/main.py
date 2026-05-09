@@ -1,6 +1,5 @@
 """CLI entry point for advanced_keyword_researcher."""
 
-import json
 import os
 import re
 import sys
@@ -36,7 +35,7 @@ def cli():
 
 @cli.command()
 @click.argument("keyword")
-@click.option("--output", "output_fmt", type=click.Choice(["json", "markdown", "excel"], case_sensitive=False), default="json", help="Output format (default: json)")
+@click.option("--format", "output_fmt", type=click.Choice(["json", "markdown", "excel"], case_sensitive=False), default="excel", help="Output format (default: excel)")
 @click.option("--output", "output_file", type=click.Path(), default=None, help="Save to specific file path")
 @click.option("--stdout", "use_stdout", is_flag=True, default=False, help="Force output to terminal")
 @click.option("--skip-llm", is_flag=True, default=False, help="Skip LLM analysis")
@@ -46,10 +45,9 @@ def cli():
 @click.option("--no-cache", "no_cache", is_flag=True, default=False, help="Force fresh API calls, ignore cache")
 @click.option("--cache-ttl", "cache_ttl", default=CACHE_TTL_HOURS, type=int, help="Cache TTL in hours (default: 24)")
 @click.option("--last-days", "last_days", default=0, type=int, help="Filter videos published in the last N days (0=all time, 30 or 90 common)")
-@click.option("--region", "region_code", default="US", help="Target country code for search (ISO 3166-1 alpha-2). Default: US")
 def research(
     keyword: str,
-    fmt: str,
+    output_fmt: str,
     output_file: str | None,
     use_stdout: bool,
     skip_llm: bool,
@@ -59,7 +57,6 @@ def research(
     no_cache: bool,
     cache_ttl: int,
     last_days: int,
-    region_code: str,
 ):
     env = load_env(env_file)
     yt_api_key = env["YOUTUBE_API_KEY"]
@@ -82,7 +79,7 @@ def research(
         click.echo(f"Filtering videos from last {last_days} days...", err=True)
 
     if use_cache:
-        cached_data = load_cache(keyword, CACHE_DIR, cache_ttl, last_days, region_code)
+        cached_data = load_cache(keyword, CACHE_DIR, cache_ttl, last_days)
         if cached_data:
             age_hours = 0.0
             try:
@@ -118,25 +115,25 @@ def research(
 
     # --- If we have cached data, skip API calls ---
     if cached_data:
-        _output_response(response, fmt, output_file, keyword, use_stdout, last_days, economy, skip_llm)
+        _output_response(response, output_fmt, output_file, keyword, use_stdout, last_days, economy, skip_llm)
         return
 
-    click.echo(f"Researching: {keyword} (region: {region_code})", err=True)
+    click.echo(f"Researching: {keyword} (en/US)", err=True)
 
     collector = YouTubeCollector(yt_api_key)
 
     if economy:
-        # Economy: single search, viewCount order, 1 page only
+        # Economy: single search, viewCount order
         click.echo("Searching videos (view count order, economy)...", err=True)
-        view_videos, result_count = collector.search_videos(keyword, "viewCount", 1, published_after=published_after, video_duration=VIDEO_DURATION_FILTER, region_code=region_code)
+        view_videos, result_count = collector.search_videos(keyword, "viewCount", pages, published_after=published_after, video_duration=VIDEO_DURATION_FILTER)
         date_videos = []
     else:
         # Full: two searches, pages each
         click.echo("Searching videos (date order)...", err=True)
-        date_videos, result_count = collector.search_videos(keyword, "date", pages, published_after=published_after, video_duration=VIDEO_DURATION_FILTER, region_code=region_code)
+        date_videos, result_count = collector.search_videos(keyword, "date", pages, published_after=published_after, video_duration=VIDEO_DURATION_FILTER)
 
         click.echo("Searching videos (view count order)...", err=True)
-        view_videos, _ = collector.search_videos(keyword, "viewCount", pages, published_after=published_after, video_duration=VIDEO_DURATION_FILTER, region_code=region_code)
+        view_videos, _ = collector.search_videos(keyword, "viewCount", pages, published_after=published_after, video_duration=VIDEO_DURATION_FILTER)
 
     # Merge and deduplicate by videoId
     all_video_map: dict[str, dict] = {}
@@ -173,6 +170,7 @@ def research(
         v["lengthSeconds"] = stats.get("lengthSeconds", 0)
         v["isShort"] = stats.get("isShort", False)
         v["duration"] = format_duration(stats.get("lengthSeconds", 0))
+        v["defaultAudioLanguage"] = stats.get("defaultAudioLanguage", "")
 
         ch_stats = channel_stats.get(v["channelId"], {})
         v["channelInfo"] = ch_stats
@@ -202,23 +200,43 @@ def research(
     click.echo("Computing per-channel view medians...", err=True)
     channel_median_map = compute_channel_view_median(all_videos)
 
-    # Inject median into channel_stats and override avgViewsPerVideo
+    # Inject median into channel_stats (keep mean separate)
     for cid, median_views in channel_median_map.items():
         if cid in channel_stats:
             channel_stats[cid]["avgViewsPerVideoMedian"] = median_views
-            channel_stats[cid]["avgViewsPerVideo"] = median_views  # override for downstream use
             mean_views = channel_stats[cid].get("avgViewsPerVideoMean", 0)
             if mean_views > 0 and median_views > 0:
                 channel_stats[cid]["meanMedianRatio"] = round(mean_views / median_views, 1)
 
-    # Compute outlierMultiplier using median (or mean fallback)
+    # Compute outlierMultiplier using median (preferred) or mean fallback
     for v in all_videos:
         ch_stats = v.get("channelInfo", {})
-        avg_ch_views = ch_stats.get("avgViewsPerVideo", 0)
+        avg_ch_views = ch_stats.get("avgViewsPerVideoMedian", 0)
+        if avg_ch_views <= 0:
+            avg_ch_views = ch_stats.get("avgViewsPerVideoMean", 0)
         if avg_ch_views > 0:
             v["outlierMultiplier"] = v["viewCount"] / avg_ch_views
         else:
             v["outlierMultiplier"] = 0.0
+
+    # Step 5.4: Filter non-English videos
+    # - Skip if defaultAudioLanguage is set and not en
+    # - Also skip if title contains non-Latin characters (catches mislabeled videos)
+    import re as _re
+    _has_non_latin = _re.compile(r'[^\x00-\x7F]')
+    pre_lang_count = len(all_videos)
+    filtered_videos = []
+    for v in all_videos:
+        lang = v.get("defaultAudioLanguage", "")
+        if lang and not lang.startswith("en"):
+            continue
+        if _has_non_latin.search(v.get("title", "")):
+            continue
+        filtered_videos.append(v)
+    all_videos = filtered_videos
+    lang_filtered = pre_lang_count - len(all_videos)
+    if lang_filtered > 0:
+        click.echo(f"Filtered out {lang_filtered} non-English videos, {len(all_videos)} remaining", err=True)
 
     # Step 5.5: Filter out Shorts
     pre_filter_count = len(all_videos)
@@ -352,9 +370,9 @@ def research(
     # Save to cache
     if use_cache:
         click.echo("Saving to cache...", err=True)
-        save_cache(keyword, CACHE_DIR, response, last_days, region_code)
+        save_cache(keyword, CACHE_DIR, response, last_days)
 
-    _output_response(response, fmt, output_file, keyword, use_stdout, last_days, economy, skip_llm)
+    _output_response(response, output_fmt, output_file, keyword, use_stdout, last_days, economy, skip_llm)
 
 
 def _sanitize_keyword(keyword: str) -> str:
@@ -385,19 +403,32 @@ def _output_response(
     economy: bool = False,
     skip_llm: bool = False,
 ):
-    if fmt == "markdown":
-        output = format_markdown(response)
-        ext = "md"
-    else:
-        output = json.dumps(response, indent=2, ensure_ascii=False)
-        ext = "json"
+    from formatter import format_output
 
-    if use_stdout:
-        sys.stdout.buffer.write(output.encode("utf-8"))
-        sys.stdout.buffer.write(b"\n")
+    result = format_output(response, fmt)
+
+    if isinstance(result, bytes):
+        ext = "xlsx"
+        if use_stdout:
+            sys.stdout.buffer.write(result)
+            return
+        if output_file:
+            save_path = output_file
+        else:
+            output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+            os.makedirs(output_dir, exist_ok=True)
+            filename = _build_filename(keyword, last_days, economy, skip_llm, ext)
+            save_path = os.path.join(output_dir, filename)
+        with open(save_path, "wb") as f:
+            f.write(result)
+        click.echo(f"Saved to {save_path}", err=True)
         return
 
-    # Determine save path
+    ext = "md" if fmt == "markdown" else "json"
+    if use_stdout:
+        sys.stdout.buffer.write(result.encode("utf-8"))
+        sys.stdout.buffer.write(b"\n")
+        return
     if output_file:
         save_path = output_file
     else:
@@ -405,15 +436,9 @@ def _output_response(
         os.makedirs(output_dir, exist_ok=True)
         filename = _build_filename(keyword, last_days, economy, skip_llm, ext)
         save_path = os.path.join(output_dir, filename)
-
     with open(save_path, "w", encoding="utf-8") as f:
-        f.write(output)
+        f.write(result)
     click.echo(f"Saved to {save_path}", err=True)
-
-
-def format_markdown(resp: dict) -> str:
-    from formatter import format_markdown as _fm
-    return _fm(resp)
 
 
 @cli.command("clear-cache")

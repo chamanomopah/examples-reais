@@ -168,7 +168,7 @@ def compute_opportunity_score(videos_with_channels: list[dict]) -> dict:
     }
 
 
-def compute_channel_view_median(videos: list[dict], min_videos: int = 3) -> dict[str, float]:
+def compute_channel_view_median(videos: list[dict], min_videos: int = 1) -> dict[str, float]:
     """Compute per-channel median view count from videos in the dataset.
 
     Returns dict mapping channelId -> median viewCount.

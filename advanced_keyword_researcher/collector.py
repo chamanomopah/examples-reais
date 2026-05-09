@@ -35,7 +35,7 @@ class YouTubeCollector:
 
     def search_videos(
         self, keyword: str, order: str, max_pages: int = 2, published_after: str | None = None,
-        video_duration: str | None = None, region_code: str | None = None,
+        video_duration: str | None = None,
     ) -> tuple[list[dict], int]:
         results: list[dict] = []
         total_results = 0
@@ -49,9 +49,9 @@ class YouTubeCollector:
             maxResults=BATCH_SIZE,
             publishedAfter=published_after,
             videoDuration=video_duration,
+            relevanceLanguage="en",
+            regionCode="US",
         )
-        if region_code:
-            base_params["regionCode"] = region_code
 
         for page in range(max_pages):
             params = {**base_params}
@@ -115,6 +115,7 @@ class YouTubeCollector:
                     "isShort": length_seconds <= 60,
                     "definition": definition,
                     "liveBroadcastContent": live,
+                    "defaultAudioLanguage": item.get("snippet", {}).get("defaultAudioLanguage", ""),
                 }
 
         return result

@@ -15,29 +15,31 @@ API keys necessárias em `C:\Users\JOSE\.alfredo\.env`:
 ## Uso
 
 ```bash
-# Análise rápida (economy mode, ~103 quota units)
-py advanced_keyword_researcher.py "psychology" --markdown
+# Análise rápida (economy mode, ~103 quota units) — saída Excel (padrão)
+py advanced_keyword_researcher.py "psychology"
 
 # Análise completa (full mode, ~406 quota units)
-py advanced_keyword_researcher.py "psychology of money" --markdown --full
+py advanced_keyword_researcher.py "psychology of money" --full
 
 # Sem LLM (economiza chamadas Gemini)
-py advanced_keyword_researcher.py "psychology" --skip-llm --markdown
+py advanced_keyword_researcher.py "psychology" --skip-llm
+
+# Saída em markdown
+py advanced_keyword_researcher.py "psychology" --format markdown
 ```
 
 ## Parâmetros
 
 | Flag | Descrição |
 |------|-----------|
-| `--markdown` | Saída em markdown (padrão: JSON) |
+| `--format` | `excel` (padrão), `markdown` ou `json` |
 | `--full` | Full mode (~406 quota). Padrão: economy (~103) |
 | `--skip-llm` | Pula análise Gemini |
 | `--stdout` | Imprime no terminal em vez de salvar |
 | `--output FILE` | Caminho customizado de saída |
 | `--no-cache` | Ignora cache |
 | `--cache-ttl H` | TTL do cache em horas (padrão: 24) |
-| `--pages N` | Páginas de search no modo full (padrão: 2) |
-| `--region CODE` | País alvo ISO 3166-1 alpha-2 (padrão: US) |
+| `--pages N` | Páginas de search (padrão: 2) |
 | `--last-days N` | Filtra vídeos dos últimos N dias |
 
 ## Cache
@@ -64,7 +66,7 @@ py advanced_keyword_researcher.py clear-cache psychology   # limpa por keyword
 | `collector.py` | Coleta de dados (YouTube Data API v3) |
 | `scorer.py` | Algoritmos de scoring (trend, opportunity, median, duration, market) |
 | `analyzer.py` | Análise via Gemini LLM (topics, audience, psychographics) |
-| `formatter.py` | Montagem JSON + formatação markdown |
+| `formatter.py` | Formatação unificada (excel, markdown, json) |
 | `cache.py` | Cache baseado em arquivo |
 
 Resultados em `output/` · Cache em `.cache/`
