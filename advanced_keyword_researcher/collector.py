@@ -35,7 +35,7 @@ class YouTubeCollector:
 
     def search_videos(
         self, keyword: str, order: str, max_pages: int = 2, published_after: str | None = None,
-        video_duration: str | None = None,
+        published_before: str | None = None, video_duration: str | None = None,
     ) -> tuple[list[dict], int]:
         results: list[dict] = []
         total_results = 0
@@ -48,6 +48,7 @@ class YouTubeCollector:
             order=order,
             maxResults=BATCH_SIZE,
             publishedAfter=published_after,
+            publishedBefore=published_before,
             videoDuration=video_duration,
             relevanceLanguage="en",
             regionCode="US",

@@ -262,58 +262,33 @@ def format_markdown(resp: dict) -> str:
         lines.append("### Titulo DNA -- Padroes dos Titulos")
         lines.append("")
 
-        # Word frequency (top 10)
+        # N-gram frequency (top 10)
         word_freq = title_dna.get("wordFrequency", [])[:10]
         if word_freq:
-            lines.append("| Palavra | Vezes | O que sugere |")
-            lines.append("|---------|-------|---------------|")
-            suggestions = {
-                "psychology": "base do nicho (esperado)",
-                "people": "foco em comportamento humano",
-                "who": "formato de identificacao",
-                "signs": "promessa de revelacao",
-                "habits": "conteudo pratico",
-                "men": "segmento popular",
-                "women": "segmento popular",
-                "gen x": "segmento popular",
-                "gen z": "segmento popular",
-                "millennial": "segmento popular",
-                "actually": "subversao de expectativa",
-                "secret": "promessa de exclusividade",
-                "hidden": "promessa de revelacao",
-                "sign": "promessa de revelacao",
-                "habit": "conteudo pratico",
-                "man": "segmento popular",
-                "woman": "segmento popular",
-                "why": "curiosidade",
-                "how": "tutorial/educativo",
-                "dont": "comportamento negativo",
-                "don't": "comportamento negativo",
-                "never": "intensidade/urgencia",
-                "always": "generalizacao poderosa",
-                "narcissist": "topicos de personalidade",
-                "narcissists": "topicos de personalidade",
-                "introvert": "segmento de personalidade",
-                "introverts": "segmento de personalidade",
-                "extrovert": "segmento de personalidade",
-                "extroverts": "segmento de personalidade",
-            }
+            lines.append("| Frase | Vezes | Views Medias | Lift |")
+            lines.append("|-------|-------|-------------|------|")
             for wf in word_freq:
-                word = wf.get("word", "")
+                phrase = wf.get("word", "")
                 count = wf.get("count", 0)
-                suggestion = suggestions.get(word.lower(), "")
-                lines.append(f"| {word.capitalize()} | {count} | {suggestion} |")
+                avg_views = wf.get("avgViews", 0)
+                lift = wf.get("lift")
+                lift_str = f"{lift:.1f}x" if lift is not None else "-"
+                lines.append(f"| {phrase.title()} | {count} | {format_number(avg_views)} | {lift_str} |")
             lines.append("")
 
         # Title structure patterns
         title_patterns = title_dna.get("titlePatterns", [])
         if title_patterns:
-            lines.append("| Formato | Exemplo | Frequencia |")
-            lines.append("|---------|---------|------------|")
+            lines.append("| Formato | Exemplo | Frequencia | Mult. | Outlier Rate | Views |")
+            lines.append("|---------|---------|------------|-------|-------------|-------|")
             for tp in title_patterns:
+                avg_mult = tp.get("avgMultiplier", 0)
+                mult_str = f"{avg_mult}x" if avg_mult else "-"
+                views_str = format_number(tp.get("avgViews", 0)) if tp.get("avgViews") else "-"
                 lines.append(
                     f"| {tp.get('format', '')} | {tp.get('example', '')[:50]} | "
-                    f"{tp.get('frequency', '')} |"
+                    f"{tp.get('frequency', '')} | {mult_str} | "
+                    f"{tp.get('outlierRate', '')} | {views_str} |"
                 )
             lines.append("")
 
@@ -480,7 +455,7 @@ ENG_RED = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid
 ENG_YELLOW = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
 ENG_GREEN = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")
 
-WRAP_COLS = {"Title", "Channel", "Example", "Insights", "Angle", "Reasoning", "Content Preference", "Primary Intent", "Secondary Intent", "Pain Point", "Motivation", "Interests", "Values", "Category", "Insight", "Topic", "Suggestion"}
+WRAP_COLS = {"Title", "Channel", "Video URL", "Channel URL", "Example", "Insights", "Angle", "Reasoning", "Content Preference", "Primary Intent", "Secondary Intent", "Pain Point", "Motivation", "Interests", "Values", "Category", "Insight", "Topic", "Suggestion"}
 
 
 def _style_header(ws, row, cols):
@@ -623,7 +598,7 @@ def _write_channels(ws, channels):
 
 
 def _write_outliers(ws, outlier_videos):
-    ws.append(["#", "Title", "Channel", "Views", "Subs", "Multiplier", "Days", "URL"])
+    ws.append(["#", "Title", "Video URL", "Channel", "Channel URL", "Views", "Subs", "Multiplier", "Days", "URL"])
     valid = []
     for v in (outlier_videos or []):
         mult = v.get("outlierMultiplier", 0)
@@ -633,22 +608,24 @@ def _write_outliers(ws, outlier_videos):
 
     for i, v in enumerate(valid, 1):
         vid = v.get("videoId", "")
-        url = f"https://www.youtube.com/watch?v={vid}" if vid else ""
+        video_url = f"https://www.youtube.com/watch?v={vid}" if vid else ""
+        cid = v.get("channelId", "")
+        channel_url = f"https://www.youtube.com/channel/{cid}" if cid else ""
         mult = v.get("outlierMultiplier", 0)
         subs = v.get("channelInfo", {}).get("subscriberCount", 0)
         row_num = i + 1
-        ws.append([i, v.get("title", ""), v.get("channelTitle", ""),
+        ws.append([i, v.get("title", ""), video_url, v.get("channelTitle", ""), channel_url,
                     _fmt_int(v.get("viewCount", 0)), _fmt_int(subs),
-                    f"{mult:.1f}x", round(v.get("daysAgo", 0)), url])
-        _add_hyperlink(ws, row_num, 2, v.get("title", ""), url)
-        _add_hyperlink(ws, row_num, 8, "Watch", url)
-        _fmt_mult(ws.cell(row=row_num, column=6), mult)
-    _style_header(ws, 1, 8)
+                    f"{mult:.1f}x", round(v.get("daysAgo", 0)), video_url])
+        _add_hyperlink(ws, row_num, 2, v.get("title", ""), video_url)
+        _add_hyperlink(ws, row_num, 10, "Watch", video_url)
+        _fmt_mult(ws.cell(row=row_num, column=8), mult)
+    _style_header(ws, 1, 10)
     _auto_width(ws)
 
 
 def _write_small_outliers(ws, outlier_videos):
-    ws.append(["#", "Title", "Channel", "Views", "Subs", "Multiplier", "Days", "Size", "URL"])
+    ws.append(["#", "Title", "Video URL", "Channel", "Channel URL", "Views", "Subs", "Multiplier", "Days", "Size", "URL"])
     small = [
         v for v in (outlier_videos or [])
         if v.get("channelSize") in ("micro", "small")
@@ -659,24 +636,26 @@ def _write_small_outliers(ws, outlier_videos):
 
     for i, v in enumerate(small, 1):
         vid = v.get("videoId", "")
-        url = f"https://www.youtube.com/watch?v={vid}" if vid else ""
+        video_url = f"https://www.youtube.com/watch?v={vid}" if vid else ""
+        cid = v.get("channelId", "")
+        channel_url = f"https://www.youtube.com/channel/{cid}" if cid else ""
         mult = v.get("outlierMultiplier", 0)
         subs = v.get("channelInfo", {}).get("subscriberCount", 0)
         size = v.get("channelSize", "")
         size_label = "Micro" if size == "micro" else "Small"
         row_num = i + 1
-        ws.append([i, v.get("title", ""), v.get("channelTitle", ""),
+        ws.append([i, v.get("title", ""), video_url, v.get("channelTitle", ""), channel_url,
                     _fmt_int(v.get("viewCount", 0)), _fmt_int(subs),
-                    f"{mult:.1f}x", round(v.get("daysAgo", 0)), size_label, url])
-        _add_hyperlink(ws, row_num, 2, v.get("title", ""), url)
-        _add_hyperlink(ws, row_num, 9, "Watch", url)
-        _fmt_mult(ws.cell(row=row_num, column=6), mult)
-    _style_header(ws, 1, 9)
+                    f"{mult:.1f}x", round(v.get("daysAgo", 0)), size_label, video_url])
+        _add_hyperlink(ws, row_num, 2, v.get("title", ""), video_url)
+        _add_hyperlink(ws, row_num, 11, "Watch", video_url)
+        _fmt_mult(ws.cell(row=row_num, column=8), mult)
+    _style_header(ws, 1, 11)
     _auto_width(ws)
 
 
 def _write_opportunities(ws, outlier_videos):
-    ws.append(["Title", "Channel", "Views", "Multiplier", "Angle", "URL"])
+    ws.append(["Title", "Video URL", "Channel", "Channel URL", "Views", "Multiplier", "Angle", "URL"])
     outliers_5x = [
         v for v in (outlier_videos or [])
         if v.get("outlierMultiplier", 0) >= 5.0
@@ -699,70 +678,74 @@ def _write_opportunities(ws, outlier_videos):
 
     for i, v in enumerate(outliers_5x, 1):
         vid = v.get("videoId", "")
-        url = f"https://www.youtube.com/watch?v={vid}" if vid else ""
+        video_url = f"https://www.youtube.com/watch?v={vid}" if vid else ""
+        cid = v.get("channelId", "")
+        channel_url = f"https://www.youtube.com/channel/{cid}" if cid else ""
         mult = v.get("outlierMultiplier", 0)
         words = re.findall(r"[a-zA-Z]+", v.get("title", "").lower())
         angle_words = [w for w in words if w not in STOPWORDS and len(w) > 1]
         angle = " + ".join(angle_words[:5]) if angle_words else v.get("title", "")[:40]
         row_num = i + 1
-        ws.append([v.get("title", ""), v.get("channelTitle", ""),
-                    _fmt_int(v.get("viewCount", 0)), f"{mult:.1f}x", angle, url])
-        _add_hyperlink(ws, row_num, 1, v.get("title", ""), url)
-        _add_hyperlink(ws, row_num, 6, "Watch", url)
-        _fmt_mult(ws.cell(row=row_num, column=4), mult)
-    _style_header(ws, 1, 6)
+        ws.append([v.get("title", ""), video_url, v.get("channelTitle", ""), channel_url,
+                    _fmt_int(v.get("viewCount", 0)), f"{mult:.1f}x", angle, video_url])
+        _add_hyperlink(ws, row_num, 1, v.get("title", ""), video_url)
+        _add_hyperlink(ws, row_num, 8, "Watch", video_url)
+        _fmt_mult(ws.cell(row=row_num, column=6), mult)
+    _style_header(ws, 1, 8)
     _auto_width(ws)
 
 
 def _write_title_dna_words(ws, title_dna):
-    ws.append(["Word", "Count", "Suggestion"])
+    ws.append(["Phrase", "Count", "Avg Views", "Lift", "Suggestion"])
     word_freq = title_dna.get("wordFrequency", [])[:10]
-    suggestions = {
-        "psychology": "base do nicho (esperado)",
-        "people": "foco em comportamento humano",
-        "who": "formato de identificacao",
-        "signs": "promessa de revelacao",
-        "habits": "conteudo pratico",
-        "men": "segmento popular",
-        "women": "segmento popular",
-        "gen x": "segmento popular",
-        "gen z": "segmento popular",
-        "millennial": "segmento popular",
-        "actually": "subversao de expectativa",
-        "secret": "promessa de exclusividade",
-        "hidden": "promessa de revelacao",
-        "sign": "promessa de revelacao",
-        "habit": "conteudo pratico",
-        "man": "segmento popular",
-        "woman": "segmento popular",
-        "why": "curiosidade",
-        "how": "tutorial/educativo",
-        "dont": "comportamento negativo",
-        "don't": "comportamento negativo",
-        "never": "intensidade/urgencia",
-        "always": "generalizacao poderosa",
-        "narcissist": "topicos de personalidade",
-        "narcissists": "topicos de personalidade",
-        "introvert": "segmento de personalidade",
-        "introverts": "segmento de personalidade",
-        "extrovert": "segmento de personalidade",
-        "extroverts": "segmento de personalidade",
-    }
-    for wf in word_freq:
-        word = wf.get("word", "")
+    for i, wf in enumerate(word_freq, start=2):
+        phrase = wf.get("word", "")
         count = wf.get("count", 0)
-        suggestion = suggestions.get(word.lower(), "")
-        ws.append([word.capitalize(), count, suggestion])
-    _style_header(ws, 1, 3)
+        avg_views = wf.get("avgViews", 0)
+        lift = wf.get("lift")
+        lift_str = f"{lift:.1f}x" if lift is not None else "-"
+        ws.append([phrase.title(), count, format_number(avg_views), lift_str, ""])
+        # Style lift column
+        if lift is not None:
+            cell = ws.cell(row=i, column=4)
+            if lift >= 1.5:
+                cell.fill = ENG_GREEN
+            elif lift <= 0.5:
+                cell.fill = ENG_RED
+    _style_header(ws, 1, 5)
     _auto_width(ws)
 
 
 def _write_title_dna_patterns(ws, title_dna):
-    ws.append(["Format", "Example", "Frequency"])
+    ws.append(["Format", "Example", "Frequency", "Avg Multiplier", "Outlier Rate", "Avg Views"])
     title_patterns = title_dna.get("titlePatterns", [])
     for tp in title_patterns:
-        ws.append([tp.get("format", ""), tp.get("example", ""), tp.get("frequency", "")])
-    _style_header(ws, 1, 3)
+        avg_mult = tp.get("avgMultiplier", 0)
+        outlier_rate_str = tp.get("outlierRate", "0%")
+        avg_views = tp.get("avgViews", 0)
+        row_num = ws.max_row + 1
+        ws.append([
+            tp.get("format", ""),
+            tp.get("example", ""),
+            tp.get("frequency", ""),
+            f"{avg_mult}x" if avg_mult else "-",
+            outlier_rate_str,
+            format_number(avg_views) if avg_views else "-",
+        ])
+        # Style Avg Multiplier column (col 4)
+        mult_cell = ws.cell(row=row_num, column=4)
+        if avg_mult and avg_mult >= 1.5:
+            mult_cell.fill = ENG_GREEN
+        elif avg_mult and avg_mult < 0.8:
+            mult_cell.fill = ENG_RED
+        # Style Outlier Rate column (col 5)
+        rate_cell = ws.cell(row=row_num, column=5)
+        rate_val = float(outlier_rate_str.replace("%", "")) if outlier_rate_str != "-" else 0
+        if rate_val >= 50:
+            rate_cell.fill = ENG_GREEN
+        elif rate_val < 20:
+            rate_cell.fill = ENG_RED
+    _style_header(ws, 1, 6)
     ws.column_dimensions["B"].width = 60
     for row in ws.iter_rows(min_col=2, max_col=2, min_row=2, max_row=ws.max_row):
         for cell in row:

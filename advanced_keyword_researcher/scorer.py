@@ -326,6 +326,7 @@ def build_channels(
 
 def analyze_title_dna(videos: list[dict]) -> dict:
     """Analyze title patterns: word frequency, structure, and length stats."""
+    import math
     import re
     from collections import Counter
 
@@ -342,21 +343,20 @@ def analyze_title_dna(videos: list[dict]) -> dict:
         "day", "did", "get", "come", "made", "may", "part",
     })
 
-    DEMOGRAPHIC_WORDS = frozenset({
-        "men", "women", "man", "woman", "gen x", "gen z", "millennial",
-        "millennials", "boomer", "boomers", "elder", "older", "younger",
-        "teen", "teens", "teenager", "teenagers", "kids", "boys", "girls",
-        "introverts", "extroverts", "narcissist", "narcissists",
+    LIST_WORDS = frozenset({
+        "things", "reasons", "ways", "habits", "signs", "rules", "steps",
+        "types", "secrets", "mistakes", "facts", "tricks", "tips", "myths",
+        "truths", "stages", "phases", "levels", "forms", "kinds",
     })
 
-    EMOTIONAL_TRIGGERS = frozenset({
-        "signs", "habits", "actually", "terrifying", "hidden", "secret",
-        "secrets", "shocking", "dangerous", "disturbing", "creepy",
-        "warning", "mistake", "mistakes", "never", "always", "stop",
-        "why", "truth", "reveals", "destroy", "manipulate", "toxic",
+    ALL_CAPS_EXCLUDE = frozenset({
+        "THE", "OF", "AND", "A", "I", "AN", "IN", "IS", "IT", "TO", "ON",
+        "FOR", "AT", "BY", "OR", "AS", "BE", "DO", "WE", "HE", "SO", "NO",
+        "IF", "UP", "US", "MY",
     })
 
-    titles = [v.get("title", "") for v in videos if v.get("title", "")]
+    titled_videos = [v for v in videos if v.get("title", "")]
+    titles = [v.get("title", "") for v in titled_videos]
 
     if not titles:
         return {
@@ -365,18 +365,69 @@ def analyze_title_dna(videos: list[dict]) -> dict:
             "titleLengthStats": {"median": 0, "min": 0, "max": 0},
         }
 
-    # Word frequency
-    word_counter: Counter = Counter()
+    total_titles = len(titles)
+    overall_avg_views = (
+        sum(v.get("viewCount", 0) for v in titled_videos)
+        / total_titles
+        if total_titles else 1
+    )
+
+    # ── TF-IDF n-gram extraction ──
+
+    # Build document frequency (DF) for each word
+    word_df: Counter = Counter()
+    title_words_list: list[list[str]] = []
     for title in titles:
         words = re.findall(r"[a-zA-Z]+", title.lower())
-        for w in words:
-            if w not in STOPWORDS and len(w) > 1:
-                word_counter[w] += 1
+        title_words_list.append(words)
+        unique_words = set(words)
+        for w in unique_words:
+            word_df[w] += 1
 
-    top_words = word_counter.most_common(15)
-    word_frequency = [{"word": w, "count": c} for w, c in top_words]
+    # Calculate IDF for each word
+    word_idf: dict[str, float] = {}
+    for w, df in word_df.items():
+        word_idf[w] = math.log(total_titles / (1 + df))
 
-    # Title length stats
+    # Extract n-grams and score with TF-IDF
+    ngram_counter: Counter = Counter()
+    ngram_views: dict[str, list[int]] = {}
+    ngram_tfidf: dict[str, float] = {}
+
+    for title, video in zip(titles, titled_videos):
+        words = title_words_list[titles.index(title)]
+        for n in (2, 3):
+            for i in range(len(words) - n + 1):
+                gram = tuple(words[i : i + n])
+                if any(len(w) <= 1 for w in gram):
+                    continue
+                if all(w in STOPWORDS for w in gram):
+                    continue
+                phrase = " ".join(gram)
+                ngram_counter[phrase] += 1
+                views = video.get("viewCount", 0)
+                ngram_views.setdefault(phrase, []).append(views)
+                # TF-IDF: count * min(IDF of component words)
+                min_idf = min(word_idf.get(w, 0) for w in gram)
+                ngram_tfidf[phrase] = ngram_counter[phrase] * min_idf
+
+    # Sort by TF-IDF score, take top 15
+    top_ngrams = sorted(ngram_tfidf.items(), key=lambda x: x[1], reverse=True)[:15]
+    word_frequency = []
+    for phrase, tfidf_score in top_ngrams:
+        count = ngram_counter[phrase]
+        views_list = ngram_views[phrase]
+        avg_views = sum(views_list) / len(views_list)
+        lift = round(avg_views / overall_avg_views, 1) if count > 1 else None
+        word_frequency.append({
+            "word": phrase,
+            "count": count,
+            "avgViews": int(round(avg_views)),
+            "lift": lift,
+        })
+
+    # ── Title length stats ──
+
     lengths = [len(t) for t in titles]
     lengths.sort()
     n = len(lengths)
@@ -391,48 +442,108 @@ def analyze_title_dna(videos: list[dict]) -> dict:
         "max": max(lengths),
     }
 
-    # Pattern detection
-    pattern_counts: Counter = Counter()
-    pattern_examples: dict[str, str] = {}
+    # ── Structural pattern detection ──
 
-    for title in titles:
+    # Precompile regex patterns
+    re_subtitle_sep = re.compile(r"[:—]|\s-\s")
+    re_number_start = re.compile(r"^\d+")
+    re_question = re.compile(r"\?$")
+    re_ellipsis = re.compile(r"\.\.\.")
+    re_all_caps = re.compile(r"\b[A-Z]{3,}\b")
+    re_x_of_y = re.compile(r"\b\w+\s+of\s+\w+", re.IGNORECASE)
+    re_trigger_consequence = re.compile(
+        r"\b(if so|here's why|here's how|this is why|that's why)\b",
+        re.IGNORECASE,
+    )
+
+    # Collect all pattern matches per title
+    pattern_titles: dict[str, list[tuple[str, dict]]] = {}
+
+    for title, video in zip(titles, titled_videos):
         lower = title.lower().strip()
+        matched_patterns: list[str] = []
 
-        if re.match(r"^\d+", title):
-            pattern_key = "[N] [Word]..."
-            if pattern_key not in pattern_examples:
-                pattern_examples[pattern_key] = title
-            pattern_counts[pattern_key] += 1
-        elif "psychology of" in lower:
-            pattern_key = "Psychology of [Grupo]"
-            if pattern_key not in pattern_examples:
-                pattern_examples[pattern_key] = title
-            pattern_counts[pattern_key] += 1
-        elif any(d in lower for d in DEMOGRAPHIC_WORDS):
-            pattern_key = "[Grupo] + [Comportamento]"
-            if pattern_key not in pattern_examples:
-                pattern_examples[pattern_key] = title
-            pattern_counts[pattern_key] += 1
-        elif any(t in lower for t in EMOTIONAL_TRIGGERS):
-            pattern_key = "[Gatilho Emocional] + [Consequencia]"
-            if pattern_key not in pattern_examples:
-                pattern_examples[pattern_key] = title
-            pattern_counts[pattern_key] += 1
-        else:
-            pattern_key = "Outro"
-            if pattern_key not in pattern_examples:
-                pattern_examples[pattern_key] = title
-            pattern_counts[pattern_key] += 1
+        # 1. [Keyword] of [Target]: [Subtitle]
+        if re_subtitle_sep.search(title) and re_x_of_y.search(title):
+            matched_patterns.append("[Keyword] of [Target]: [Subtitle]")
 
-    total = sum(pattern_counts.values())
+        # 2. [Question]?
+        if re_question.search(title):
+            matched_patterns.append("[Question]?")
+
+        # 3. [N] [Things/Reasons/Ways/...]
+        num_match = re_number_start.match(title)
+        if num_match:
+            after_num = title[num_match.end():].strip().lower()
+            first_word = re.findall(r"[a-zA-Z]+", after_num)
+            if first_word and first_word[0] in LIST_WORDS:
+                matched_patterns.append("[N] [Things/Reasons/Ways...]")
+
+        # 4. [Ellipsis]...
+        if re_ellipsis.search(title):
+            matched_patterns.append("[Ellipsis]...")
+
+        # 5. [All Caps Word]
+        caps_words = re_all_caps.findall(title)
+        if any(w not in ALL_CAPS_EXCLUDE for w in caps_words):
+            matched_patterns.append("[All Caps Word]")
+
+        # 6. [Keyword] of [Target] (without subtitle separator)
+        if re_x_of_y.search(title) and not re_subtitle_sep.search(title):
+            matched_patterns.append("[Keyword] of [Target]")
+
+        # 7. [Trigger] + [Consequence]
+        if "?" in title and any(c.isalpha() for c in title[title.index("?") + 1:]):
+            matched_patterns.append("[Trigger] + [Consequence]")
+        elif re_trigger_consequence.search(lower):
+            matched_patterns.append("[Trigger] + [Consequence]")
+
+        # 8. Outro (fallback for titles with no matches)
+        if not matched_patterns:
+            matched_patterns.append("Outro")
+
+        for pattern_key in matched_patterns:
+            if pattern_key not in pattern_titles:
+                pattern_titles[pattern_key] = []
+            pattern_titles[pattern_key].append((title, video))
+
+    # Build pattern stats with performance correlation
+    total_pattern_matches = sum(len(v) for v in pattern_titles.values())
     title_patterns = []
-    for pattern, count in pattern_counts.most_common():
-        pct = round(count / total * 100) if total > 0 else 0
+    for pattern_key, entries in sorted(
+        pattern_titles.items(), key=lambda x: len(x[1]), reverse=True
+    ):
+        count = len(entries)
+        pct = round(count / total_titles * 100) if total_titles > 0 else 0
+
+        # Performance correlation
+        multipliers = []
+        outlier_count = 0
+        view_sums = 0
+        for _, video in entries:
+            mult = video.get("outlierMultiplier", 0)
+            if mult and mult > 0 and not (math.isinf(mult) or math.isnan(mult)):
+                multipliers.append(mult)
+            if mult and mult >= 1.0:
+                outlier_count += 1
+            view_sums += video.get("viewCount", 0)
+
+        avg_mult = round(sum(multipliers) / len(multipliers), 1) if multipliers else 0
+        outlier_pct = round(outlier_count / count * 100) if count > 0 else 0
+        avg_views = round(view_sums / count) if count > 0 else 0
+
+        # Up to 2 examples (first two)
+        examples = [e[0] for e in entries[:2]]
+
         title_patterns.append({
-            "format": pattern,
-            "example": pattern_examples.get(pattern, ""),
+            "format": pattern_key,
+            "example": examples[0] if examples else "",
+            "example2": examples[1] if len(examples) > 1 else "",
             "frequency": f"{pct}%",
             "count": count,
+            "avgMultiplier": avg_mult,
+            "outlierRate": f"{outlier_pct}%",
+            "avgViews": avg_views,
         })
 
     return {

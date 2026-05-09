@@ -45,6 +45,9 @@ def cli():
 @click.option("--no-cache", "no_cache", is_flag=True, default=False, help="Force fresh API calls, ignore cache")
 @click.option("--cache-ttl", "cache_ttl", default=CACHE_TTL_HOURS, type=int, help="Cache TTL in hours (default: 24)")
 @click.option("--last-days", "last_days", default=0, type=int, help="Filter videos published in the last N days (0=all time, 30 or 90 common)")
+@click.option("--from", "date_from", default=None, type=str, help="Start date YYYY-MM-DD (mutually exclusive with --last-days)")
+@click.option("--to", "date_to", default=None, type=str, help="End date YYYY-MM-DD (default: today, mutually exclusive with --last-days)")
+@click.option("--output-dir", "output_dir", default=None, type=click.Path(), help="Custom output directory (mutually exclusive with --output)")
 def research(
     keyword: str,
     output_fmt: str,
@@ -57,7 +60,15 @@ def research(
     no_cache: bool,
     cache_ttl: int,
     last_days: int,
+    date_from: str | None,
+    date_to: str | None,
+    output_dir: str | None,
 ):
+    # Validate --output-dir / --output mutual exclusivity
+    if output_dir and output_file:
+        click.echo("Error: --output-dir is mutually exclusive with --output", err=True)
+        sys.exit(1)
+
     env = load_env(env_file)
     yt_api_key = env["YOUTUBE_API_KEY"]
     gemini_api_key = env["GEMINI_API_KEY"]
@@ -71,15 +82,57 @@ def research(
     use_cache = not no_cache
     cached_data = None
 
-    # --- Compute publishedAfter for --last-days ---
+    # --- Compute publishedAfter / publishedBefore ---
     published_after = None
+    published_before = None
+    period_label = None  # for filenames and logs
+
+    # Validate mutual exclusivity
+    if last_days > 0 and (date_from or date_to):
+        click.echo("Error: --last-days is mutually exclusive with --from/--to", err=True)
+        sys.exit(1)
+
     if last_days > 0:
         cutoff = datetime.now(timezone.utc) - timedelta(days=last_days)
         published_after = cutoff.strftime("%Y-%m-%dT00:00:00Z")
+        period_label = f"{last_days}d"
         click.echo(f"Filtering videos from last {last_days} days...", err=True)
+    elif date_from or date_to:
+        # Parse --from
+        if date_from:
+            try:
+                dt_from = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except ValueError:
+                click.echo(f"Error: --from date must be YYYY-MM-DD, got '{date_from}'", err=True)
+                sys.exit(1)
+            published_after = dt_from.strftime("%Y-%m-%dT00:00:00Z")
+        else:
+            # --to alone: from 365 days before --to
+            dt_to = datetime.strptime(date_to, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            dt_from = dt_to - timedelta(days=365)
+            published_after = dt_from.strftime("%Y-%m-%dT00:00:00Z")
+
+        # Parse --to (default: today)
+        if date_to:
+            try:
+                dt_to = datetime.strptime(date_to, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except ValueError:
+                click.echo(f"Error: --to date must be YYYY-MM-DD, got '{date_to}'", err=True)
+                sys.exit(1)
+        else:
+            dt_to = datetime.now(timezone.utc)
+
+        # publishedBefore is the day AFTER --to (exclusive boundary)
+        published_before = (dt_to + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
+
+        # Build compact label for filenames
+        from_str = date_from or dt_from.strftime("%Y-%m-%d")
+        to_str = date_to or dt_to.strftime("%Y-%m-%d")
+        period_label = f"{from_str}_to_{to_str}"
+        click.echo(f"Filtering videos from {from_str} to {to_str}...", err=True)
 
     if use_cache:
-        cached_data = load_cache(keyword, CACHE_DIR, cache_ttl, last_days)
+        cached_data = load_cache(keyword, CACHE_DIR, cache_ttl, last_days, date_from, date_to)
         if cached_data:
             age_hours = 0.0
             try:
@@ -115,7 +168,7 @@ def research(
 
     # --- If we have cached data, skip API calls ---
     if cached_data:
-        _output_response(response, output_fmt, output_file, keyword, use_stdout, last_days, economy, skip_llm)
+        _output_response(response, output_fmt, output_file, keyword, use_stdout, last_days, economy, skip_llm, date_from, date_to, output_dir)
         return
 
     click.echo(f"Researching: {keyword} (en/US)", err=True)
@@ -125,15 +178,15 @@ def research(
     if economy:
         # Economy: single search, viewCount order
         click.echo("Searching videos (view count order, economy)...", err=True)
-        view_videos, result_count = collector.search_videos(keyword, "viewCount", pages, published_after=published_after, video_duration=VIDEO_DURATION_FILTER)
+        view_videos, result_count = collector.search_videos(keyword, "viewCount", pages, published_after=published_after, published_before=published_before, video_duration=VIDEO_DURATION_FILTER)
         date_videos = []
     else:
         # Full: two searches, pages each
         click.echo("Searching videos (date order)...", err=True)
-        date_videos, result_count = collector.search_videos(keyword, "date", pages, published_after=published_after, video_duration=VIDEO_DURATION_FILTER)
+        date_videos, result_count = collector.search_videos(keyword, "date", pages, published_after=published_after, published_before=published_before, video_duration=VIDEO_DURATION_FILTER)
 
         click.echo("Searching videos (view count order)...", err=True)
-        view_videos, _ = collector.search_videos(keyword, "viewCount", pages, published_after=published_after, video_duration=VIDEO_DURATION_FILTER)
+        view_videos, _ = collector.search_videos(keyword, "viewCount", pages, published_after=published_after, published_before=published_before, video_duration=VIDEO_DURATION_FILTER)
 
     # Merge and deduplicate by videoId
     all_video_map: dict[str, dict] = {}
@@ -252,11 +305,40 @@ def research(
         if vid not in all_video_map:
             all_video_map[vid] = v
 
-    # Step 5.6: Filter by --last-days (post-filter safety net)
+    # Step 5.6: Post-filter safety net for date range
     if last_days > 0:
         before_count = len(all_videos)
         all_videos = [v for v in all_videos if v.get("daysAgo", 999) <= last_days]
         click.echo(f"Time filter: kept {len(all_videos)}/{before_count} videos from last {last_days} days", err=True)
+
+        # Rebuild video maps after time filter
+        all_video_map: dict[str, dict] = {}
+        for v in all_videos:
+            vid = v["videoId"]
+            if vid not in all_video_map:
+                all_video_map[vid] = v
+    elif date_from or date_to:
+        before_count = len(all_videos)
+        filtered = []
+        for v in all_videos:
+            pub = v.get("publishedAt", "")
+            if not pub:
+                continue
+            try:
+                pub_dt = datetime.fromisoformat(pub.replace("Z", "+00:00"))
+            except Exception:
+                continue
+            if date_from:
+                dt_from = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                if pub_dt < dt_from:
+                    continue
+            if date_to:
+                dt_to = datetime.strptime(date_to, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
+                if pub_dt >= dt_to:
+                    continue
+            filtered.append(v)
+        all_videos = filtered
+        click.echo(f"Time filter: kept {len(all_videos)}/{before_count} videos in date range", err=True)
 
         # Rebuild video maps after time filter
         all_video_map: dict[str, dict] = {}
@@ -370,9 +452,9 @@ def research(
     # Save to cache
     if use_cache:
         click.echo("Saving to cache...", err=True)
-        save_cache(keyword, CACHE_DIR, response, last_days)
+        save_cache(keyword, CACHE_DIR, response, last_days, date_from, date_to)
 
-    _output_response(response, output_fmt, output_file, keyword, use_stdout, last_days, economy, skip_llm)
+    _output_response(response, output_fmt, output_file, keyword, use_stdout, last_days, economy, skip_llm, date_from, date_to, output_dir)
 
 
 def _sanitize_keyword(keyword: str) -> str:
@@ -382,9 +464,14 @@ def _sanitize_keyword(keyword: str) -> str:
     return (safe[:30] if len(safe) > 30 else safe) or "untitled"
 
 
-def _build_filename(keyword: str, last_days: int, economy: bool, skip_llm: bool, ext: str) -> str:
+def _build_filename(keyword: str, last_days: int, economy: bool, skip_llm: bool, ext: str, date_from: str | None = None, date_to: str | None = None) -> str:
     kw = _sanitize_keyword(keyword)
-    period = f"{last_days}d" if last_days > 0 else "all"
+    if date_from or date_to:
+        period = f"{date_from or 'unknown'}_to_{date_to or 'unknown'}"
+    elif last_days > 0:
+        period = f"{last_days}d"
+    else:
+        period = "all"
     parts = [kw, period]
     if not economy:
         parts.append("full")
@@ -402,10 +489,23 @@ def _output_response(
     last_days: int = 0,
     economy: bool = False,
     skip_llm: bool = False,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    output_dir: str | None = None,
 ):
     from formatter import format_output
 
     result = format_output(response, fmt)
+
+    # Resolve output directory
+    if output_file:
+        save_dir = None
+    elif output_dir:
+        save_dir = output_dir
+        os.makedirs(save_dir, exist_ok=True)
+    else:
+        save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+        os.makedirs(save_dir, exist_ok=True)
 
     if isinstance(result, bytes):
         ext = "xlsx"
@@ -415,10 +515,8 @@ def _output_response(
         if output_file:
             save_path = output_file
         else:
-            output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
-            os.makedirs(output_dir, exist_ok=True)
-            filename = _build_filename(keyword, last_days, economy, skip_llm, ext)
-            save_path = os.path.join(output_dir, filename)
+            filename = _build_filename(keyword, last_days, economy, skip_llm, ext, date_from, date_to)
+            save_path = os.path.join(save_dir, filename)
         with open(save_path, "wb") as f:
             f.write(result)
         click.echo(f"Saved to {save_path}", err=True)
@@ -432,10 +530,8 @@ def _output_response(
     if output_file:
         save_path = output_file
     else:
-        output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
-        os.makedirs(output_dir, exist_ok=True)
-        filename = _build_filename(keyword, last_days, economy, skip_llm, ext)
-        save_path = os.path.join(output_dir, filename)
+        filename = _build_filename(keyword, last_days, economy, skip_llm, ext, date_from, date_to)
+        save_path = os.path.join(save_dir, filename)
     with open(save_path, "w", encoding="utf-8") as f:
         f.write(result)
     click.echo(f"Saved to {save_path}", err=True)

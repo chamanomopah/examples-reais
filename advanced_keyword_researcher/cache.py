@@ -10,16 +10,18 @@ def slugify_keyword(keyword: str) -> str:
     return hashlib.md5(keyword.lower().strip().encode()).hexdigest()[:12]
 
 
-def get_cache_path(keyword: str, cache_dir: Path, last_days: int = 0) -> Path:
+def get_cache_path(keyword: str, cache_dir: Path, last_days: int = 0, date_from: str | None = None, date_to: str | None = None) -> Path:
     slug = slugify_keyword(keyword)
     parts = [slug]
-    if last_days > 0:
+    if date_from or date_to:
+        parts.append(f"from_{date_from or 'open'}_to_{date_to or 'now'}")
+    elif last_days > 0:
         parts.append(f"{last_days}d")
     return cache_dir / ("_".join(parts) + ".json")
 
 
-def load_cache(keyword: str, cache_dir: Path, ttl_hours: int, last_days: int = 0) -> dict | None:
-    path = get_cache_path(keyword, cache_dir, last_days)
+def load_cache(keyword: str, cache_dir: Path, ttl_hours: int, last_days: int = 0, date_from: str | None = None, date_to: str | None = None) -> dict | None:
+    path = get_cache_path(keyword, cache_dir, last_days, date_from, date_to)
     if not path.exists():
         return None
     try:
@@ -33,9 +35,9 @@ def load_cache(keyword: str, cache_dir: Path, ttl_hours: int, last_days: int = 0
     return None
 
 
-def save_cache(keyword: str, cache_dir: Path, response: dict, last_days: int = 0):
+def save_cache(keyword: str, cache_dir: Path, response: dict, last_days: int = 0, date_from: str | None = None, date_to: str | None = None):
     cache_dir.mkdir(parents=True, exist_ok=True)
-    path = get_cache_path(keyword, cache_dir, last_days)
+    path = get_cache_path(keyword, cache_dir, last_days, date_from, date_to)
     data = {
         "cached_at": datetime.now(timezone.utc).isoformat(),
         "response": response,
