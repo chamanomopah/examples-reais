@@ -10,7 +10,7 @@ Scripts essenciais do sistema de produção automatizada de vídeos faceless.
 Todos executam a partir de `.scripts/`:
 
 ```bash
-py <script>.py [args]
+cd C:\Users\JOSE\.alfredo\.scripts & python <script>.py [args]
 ```
 
 ## Dependências
@@ -23,6 +23,285 @@ py <script>.py [args]
 
 API keys em `C:\Users\JOSE\.alfredo\.env`:
 - `DEEPGRAM_API_KEY` — transcribe_deepgram.py
+
+## Exemplos Práticos
+
+### channel_videos_scraper.py
+Lista top vídeos do canal por views
+
+**Básico:**
+```bash
+cd C:\Users\JOSE\.alfredo\.scripts & python channel_videos_scraper.py "https://www.youtube.com/@canal/videos"
+cd C:\Users\JOSE\.alfredo\.scripts & python channel_videos_scraper.py "https://www.youtube.com/@canal/videos" --limit 10
+```
+
+**Edge cases:**
+```bash
+# URL com / no final (funciona igual)
+cd C:\Users\JOSE\.alfredo\.scripts & python channel_videos_scraper.py "https://www.youtube.com/@canal/videos/"
+
+# Channel ID em vez de @
+cd C:\Users\JOSE\.alfredo\.scripts & python channel_videos_scraper.py "https://www.youtube.com/channel/UCxxxxxxxxxxxxxx"
+
+# Salvar resultado em JSON
+cd C:\Users\JOSE\.alfredo\.scripts & python channel_videos_scraper.py "@canal" --output "C:\Users\JOSE\alfredo\canal1\videos\top_videos.json"
+```
+
+### video_downloader.py
+Baixa vídeo do YouTube
+
+**Básico:**
+```bash
+cd C:\Users\JOSE\.alfredo\.scripts & python video_downloader.py "https://youtu.be/VIDEO_ID"
+cd C:\Users\JOSE\.alfredo\.scripts & python video_downloader.py "https://youtu.be/VIDEO_ID" --output "C:\Users\JOSE\alfredo\canal1\videos\video1\video.mp4"
+cd C:\Users\JOSE\.alfredo\.scripts & python video_downloader.py "https://youtu.be/VIDEO_ID" --quality 1080
+```
+
+**Edge cases:**
+```bash
+# Qualidades disponíveis: best, 1080, 720, 480
+cd C:\Users\JOSE\.alfredo\.scripts & python video_downloader.py "VIDEO_ID" --quality 720
+
+# Caminho com espaços (use aspas)
+cd C:\Users\JOSE\.alfredo\.scripts & python video_downloader.py "VIDEO_ID" --output "C:\Users\JOSE\alfredo\meu canal\videos\video 1.mp4"
+
+# Apenas ID do vídeo (sem URL completa)
+cd C:\Users\JOSE\.alfredo\.scripts & python video_downloader.py "dQw4w9WgXcQ"
+```
+
+### video_cutter.py
+Corta vídeos por timestamp
+
+**Básico:**
+```bash
+cd C:\Users\JOSE\.alfredo\.scripts & python video_cutter.py "C:\Users\JOSE\alfredo\canal1\videos\video1\video.mp4" --start "00:00:10" --end "00:01:30"
+cd C:\Users\JOSE\.alfredo\.scripts & python video_cutter.py "video.mp4" -s 10 -e 90 --output "clip.mp4"
+```
+
+**Edge cases:**
+```bash
+# Timestamp em segundos apenas
+cd C:\Users\JOSE\.alfredo\.scripts & python video_cutter.py "video.mp4" -s 30 -e 125
+
+# Formato MM:SS (sem horas)
+cd C:\Users\JOSE\.alfredo\.scripts & python video_cutter.py "video.mp4" --start "1:20" --end "5:45"
+
+# Caminho relativo
+cd C:\Users\JOSE\.alfredo\.scripts & python video_cutter.py "..\videos\video.mp4" -s 0 -e 60
+
+# Do início até um ponto (end só)
+cd C:\Users\JOSE\.alfredo\.scripts & python video_cutter.py "video.mp4" --end "00:02:00"
+```
+
+### frames_extractor.py
+Extrai frames de vídeos
+
+**Básico:**
+```bash
+cd C:\Users\JOSE\.alfredo\.scripts & python frames_extractor.py "https://youtu.be/VIDEO_ID"
+cd C:\Users\JOSE\.alfredo\.scripts & python frames_extractor.py "C:\Videos\video.mp4" --frames 10
+```
+
+**Edge cases:**
+```bash
+# Vídeo local com caminho relativo
+cd C:\Users\JOSE\.alfredo\.scripts & python frames_extractor.py "..\..\videos\video.mp4"
+
+# Extrair frames com intervalo específico
+cd C:\Users\JOSE\.alfredo\.scripts & python frames_extractor.py "video.mp4" --interval 5
+
+# YouTube Shorts
+cd C:\Users\JOSE\.alfredo\.scripts & python frames_extractor.py "https://www.youtube.com/shorts/VIDEO_ID"
+```
+
+### thumbnail_downloader.py
+Baixa thumbnail de vídeo
+
+**Básico:**
+```bash
+cd C:\Users\JOSE\.alfredo\.scripts & python thumbnail_downloader.py "https://youtu.be/VIDEO_ID"
+cd C:\Users\JOSE\.alfredo\.scripts & python thumbnail_downloader.py "https://youtu.be/VIDEO_ID" --quality maxres --output "thumb.jpg"
+```
+
+**Edge cases:**
+```bash
+# Qualidades: maxres, high, medium, default
+cd C:\Users\JOSE\.alfredo\.scripts & python thumbnail_downloader.py "VIDEO_ID" --quality high
+
+# Apenas ID
+cd C:\Users\JOSE\.alfredo\.scripts & python thumbnail_downloader.py "dQw4w9WgXcQ"
+
+# Salvar em pasta específica
+cd C:\Users\JOSE\.alfredo\.scripts & python thumbnail_downloader.py "VIDEO_ID" --output "C:\Users\JOSE\alfredo\canal1\thumbs\video1.jpg"
+
+# Auto-fallback (se maxres não existir, tenta high)
+cd C:\Users\JOSE\.alfredo\.scripts & python thumbnail_downloader.py "VIDEO_ID" --quality maxres
+```
+
+### transcript_downloader.py
+Baixa transcrição de vídeo
+
+**Básico:**
+```bash
+cd C:\Users\JOSE\.alfredo\.scripts & python transcript_downloader.py "https://youtu.be/VIDEO_ID"
+```
+
+**Edge cases:**
+```bash
+# Vídeo sem transcrição (retorna erro)
+cd C:\Users\JOSE\.alfredo\.scripts & python transcript_downloader.py "VIDEO_ID_SEM_LEGENDA"
+
+# URL completa do YouTube
+cd C:\Users\JOSE\.alfredo\.scripts & python transcript_downloader.py "https://www.youtube.com/watch?v=VIDEO_ID"
+
+# Shorts
+cd C:\Users\JOSE\.alfredo\.scripts & python transcript_downloader.py "https://www.youtube.com/shorts/VIDEO_ID"
+```
+
+### transcribe_deepgram.py
+Transcreve áudio/vídeo com timestamps (cache automático)
+
+**Básico:**
+```bash
+cd C:\Users\JOSE\.alfredo\.scripts & python transcribe_deepgram.py "C:\Users\JOSE\alfredo\canal1\videos\video1\audio.wav"
+cd C:\Users\JOSE\.alfredo\.scripts & python transcribe_deepgram.py "audio.wav" -l pt -f srt -o "legendas.srt"
+cd C:\Users\JOSE\.alfredo\.scripts & python transcribe_deepgram.py "audio.mp3" --no-cache
+```
+
+**Edge cases:**
+```bash
+# Idiomas disponíveis: pt, pt-br, pt-pt, en, es, fr, de, it, ja, nl, hi, ru, multi
+cd C:\Users\JOSE\.alfredo\.scripts & python transcribe_deepgram.py "audio.wav" -l es
+
+# Formatos: text, srt, json
+cd C:\Users\JOSE\.alfredo\.scripts & python transcribe_deepgram.py "audio.wav" -f json -o "transcricao.json"
+
+# Arquivo já transcrito (usa cache - mais rápido)
+cd C:\Users\JOSE\.alfredo\.scripts & python transcribe_deepgram.py "audio.wav"
+
+# Forçar nova transcrição (ignora cache)
+cd C:\Users\JOSE\.alfredo\.scripts & python transcribe_deepgram.py "audio.wav" --no-cache
+
+# Vídeo (extrais áudio automaticamente)
+cd C:\Users\JOSE\.alfredo\.scripts & python transcribe_deepgram.py "video.mp4" -l pt
+```
+
+### split_script.py
+Divide roteiro em sentenças
+
+**Básico:**
+```bash
+cd C:\Users\JOSE\.alfredo\.scripts & python split_script.py "C:\Users\JOSE\alfredo\canal1\videos\video1\script.md"
+cd C:\Users\JOSE\.alfredo\.scripts & python split_script.py "script.md" --output "script_split.md"
+```
+
+**Edge cases:**
+```bash
+# Script com formatação complexa (remove ##, *, -, ** automaticamente)
+cd C:\Users\JOSE\.alfredo\.scripts & python split_script.py "script_sujo.md"
+
+# Caminho relativo
+cd C:\Users\JOSE\.alfredo\.scripts & python split_script.py "..\..\canal1\videos\video1\script.md"
+
+# Script com abreviações (Dr, Mr, etc) - não divide no meio
+cd C:\Users\JOSE\.alfredo\.scripts & python split_script.py "script_medico.md"
+```
+
+### run_workflow.py
+Executor de workflows ComfyUI (auto-incremento ativo)
+
+**Básico:**
+```bash
+cd C:\Users\JOSE\.alfredo\.scripts & python run_workflow.py --list
+cd C:\Users\JOSE\.alfredo\.scripts & python run_workflow.py z_image_turbo
+cd C:\Users\JOSE\.alfredo\.scripts & python run_workflow.py kokoro --output-dir "C:\Users\JOSE\alfredo\canal1\videos\video1\audio"
+cd C:\Users\JOSE\.alfredo\.scripts & python run_workflow.py z_image_turbo --name "minha_imagem"
+cd C:\Users\JOSE\.alfredo\.scripts & python run_workflow.py kokoro kokorogenerator.text="Texto para falar"
+```
+
+**Edge cases:**
+```bash
+# Auto-incremento (cria image_1, image_2, image_3... automaticamente)
+cd C:\Users\JOSE\.alfredo\.scripts & python run_workflow.py z_image_turbo
+cd C:\Users\JOSE\.alfredo\.scripts & python run_workflow.py z_image_turbo
+cd C:\Users\JOSE\.alfredo\.scripts & python run_workflow.py z_image_turbo
+# Resultado: z-image-turbo_1.png, z-image-turbo_2.png, z-image-turbo_3.png
+
+# Múltiplos parâmetros
+cd C:\Users\JOSE\.alfredo\.scripts & python run_workflow.py z_image_turbo cliptextencode.text="gato astronauta" emptysd3latentimage.width=1024 emptysd3latentimage.height=1024
+
+# Output dir com espaços
+cd C:\Users\JOSE\.alfredo\.scripts & python run_workflow.py kokoro --output-dir "C:\Users\JOSE\alfredo\meu canal\audio"
+
+# Sem auto-update de config
+cd C:\Users\JOSE\.alfredo\.scripts & python run_workflow.py z_image_turbo --no-update
+
+# Nome customizado (não usa auto-incremento)
+cd C:\Users\JOSE\.alfredo\.scripts & python run_workflow.py z_image_turbo --name "thumbnail_final"
+# Resultado: thumbnail_final_00001.png (ComfyUI adiciona sufixo)
+
+# Parâmetro com espaços (sem aspas no valor)
+cd C:\Users\JOSE\.alfredo\.scripts & python run_workflow.py kokoro kokorogenerator.text=Texto longo para falar
+
+# Workflows disponíveis: z_image_turbo, kokoro
+cd C:\Users\JOSE\.alfredo\.scripts & python run_workflow.py --list
+```
+
+### update_workflow_config.py
+Auto-gera workflow_config.json
+
+**Básico:**
+```bash
+cd C:\Users\JOSE\.alfredo\.scripts & python update_workflow_config.py
+```
+
+**Edge cases:**
+```bash
+# Executa após adicionar novo workflow em workflows_api_converted/
+cd C:\Users\JOSE\.alfredo\.scripts & python update_workflow_config.py
+
+# Recria config do zero (se workflow_config.json foi corrompido)
+cd C:\Users\JOSE\.alfredo\.scripts & python update_workflow_config.py
+```
+
+### build_masterfile.py
+Gera masterfile.json sincronizando imagens, áudio e timestamps
+
+**Básico:**
+```bash
+cd C:\Users\JOSE\.alfredo\.scripts & python build_masterfile.py --script "script.md" --transcript "transcript.txt" --image-dir "image/" --audio "audio.mp3"
+cd C:\Users\JOSE\.alfredo\.scripts & python build_masterfile.py --script "script.md" --transcript "transcript.txt" --image-dir "image/" --audio "audio.mp3" --output "masterfile.json"
+```
+
+**Edge cases:**
+```bash
+# Transcript em formato WebVTT (padrão Deepgram/ComfyUI)
+cd C:\Users\JOSE\.alfredo\.scripts & python build_masterfile.py --script "C:\Videos\script.md" --transcript "C:\Videos\transcript.txt" --image-dir "C:\Videos\images" --audio "C:\Videos\narracao.mp3"
+
+# Masterfile em outra pasta
+cd C:\Users\JOSE\.alfredo\.scripts & python build_masterfile.py --script "script.md" --transcript "transcript.txt" --image-dir "image/" --audio "audio.mp3" --output "../canal1/videos/video1/masterfile.json"
+```
+
+### render_from_masterfile.py
+Renderiza vídeo com FFmpeg a partir de masterfile.json
+
+**Básico:**
+```bash
+cd C:\Users\JOSE\.alfredo\.scripts & python render_from_masterfile.py --masterfile "masterfile.json"
+cd C:\Users\JOSE\.alfredo\.scripts & python render_from_masterfile.py --masterfile "masterfile.json" --output "video_final.mp4"
+```
+
+**Edge cases:**
+```bash
+# Resolução customizada
+cd C:\Users\JOSE\.alfredo\.scripts & python render_from_masterfile.py --masterfile "masterfile.json" --width 1920 --height 1080
+
+# FPS diferente
+cd C:\Users\JOSE\.alfredo\.scripts & python render_from_masterfile.py --masterfile "masterfile.json" --fps 60
+
+# Método de renderização complex (mais controle sobre timing)
+cd C:\Users\JOSE\.alfredo\.scripts & python render_from_masterfile.py --masterfile "masterfile.json" --method complex
+```
 
 ## Lista de Scripts
 
@@ -38,14 +317,12 @@ API keys em `C:\Users\JOSE\.alfredo\.env`:
 | `split_script.py` | Divide roteiro em sentenças/chunks |
 | `run_workflow.py` | Executor de workflows ComfyUI |
 | `update_workflow_config.py` | Auto-gera workflow_config.json |
+| `build_masterfile.py` | Gera masterfile.json (sync imagens + áudio + timestamps) |
+| `render_from_masterfile.py` | Renderiza vídeo com FFmpeg via masterfile.json |
 | `utils.py` | Utilitários ComfyUI (server, websocket, IO) |
-| `advanced_keyword_researcher.py` | Análise de nicho YouTube (wrapper CLI) | |
+| `advanced_keyword_researcher.py` | Análise de nicho YouTube (wrapper CLI) |
 
 ## Subdiretórios
 
 - `workflows_api_converted/` — JSONs de workflows ComfyUI (Z-IMAGE-TURBO, KOKORO)
 - `advanced_keyword_researcher/` — módulo de pesquisa de keywords (collector, scorer, analyzer, cache)
-
-## Referência rápida
-
-Ver `z_scripts.md` para exemplos de uso com flags.

@@ -10,7 +10,7 @@
   },
   "12": {
     "inputs": {
-      "audioUI": "/api/view?filename=ComfyUI_temp_ttsrf_00001_.flac&type=temp&subfolder=&rand=0.5192018984067907",
+      "filename_prefix": "audio",
       "audio": [
         "20",
         0

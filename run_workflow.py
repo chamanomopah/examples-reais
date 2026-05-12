@@ -10,6 +10,7 @@ import sys
 import io
 import json
 import subprocess
+import re
 from pathlib import Path
 import argparse
 
@@ -20,6 +21,22 @@ sys.path.insert(0, str(Path(__file__).parent))
 from utils import check_server, run_workflow
 
 WORKFLOWS_DIR = Path("workflows_api_converted")
+OUTPUT_DIR = Path("ComfyUI/output")
+
+def get_next_filename(prefix, extension="png"):
+    """Retorna próximo número disponível (ex: image_1, image_2)"""
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    pattern = re.compile(rf"^{prefix}_(\d+)\.{extension}$")
+
+    max_num = 0
+    if OUTPUT_DIR.exists():
+        for f in OUTPUT_DIR.iterdir():
+            match = pattern.match(f.name)
+            if match:
+                num = int(match.group(1))
+                max_num = max(max_num, num)
+
+    return f"{prefix}_{max_num + 1}"
 CONFIG_FILE = Path("workflow_config.json")
 
 
@@ -244,21 +261,43 @@ async def main():
     # Parse parâmetros
     params = parse_params(args.params)
 
-    # Aplicar nome customizado se fornecido (prioridade sobre params)
-    if args.name:
-        # Encontrar o nó SaveImage ou PreviewAudio e modificar o filename_prefix
+    # Auto-incremento se --name não fornecido
+    if not args.name:
+        # Encontrar tipo de output e prefixo padrão
+        default_prefix = None
+        output_type = None
+
         for node_id, node in workflow.items():
             if isinstance(node, dict):
                 class_type = node.get("class_type", "")
                 if class_type == "SaveImage":
-                    # Aplicar diretamente no workflow antes dos params
-                    if "inputs" in node and "filename_prefix" in node["inputs"]:
-                        node["inputs"]["filename_prefix"] = args.name
-                    print(f"3.1 Nome base da imagem: {args.name}")
+                    default_prefix = node["inputs"].get("filename_prefix", "image")
+                    output_type = "image"
                     break
                 elif class_type == "PreviewAudio":
-                    print(f"3.1 Nome base do áudio: {args.name}")
+                    default_prefix = node["inputs"].get("filename_prefix", "audio")
+                    output_type = "audio"
                     break
+
+        if output_type == "image":
+            args.name = get_next_filename(default_prefix, "png")
+        elif output_type == "audio":
+            args.name = get_next_filename(default_prefix, "wav")
+
+    # Aplicar nome (customizado ou auto-incrementado)
+    for node_id, node in workflow.items():
+        if isinstance(node, dict):
+            class_type = node.get("class_type", "")
+            if class_type == "SaveImage":
+                if "inputs" in node and "filename_prefix" in node["inputs"]:
+                    node["inputs"]["filename_prefix"] = args.name
+                print(f"3. Nome da imagem: {args.name}")
+                break
+            elif class_type == "PreviewAudio":
+                if "inputs" in node and "filename_prefix" in node["inputs"]:
+                    node["inputs"]["filename_prefix"] = args.name
+                print(f"3. Nome do áudio: {args.name}")
+                break
 
     if params:
         print("3. Aplicando parâmetros:")

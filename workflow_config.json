@@ -12,8 +12,8 @@
       "previewaudio": {
         "node_type": "PreviewAudio",
         "node_id": "12",
-        "audioUI": {
-          "field": "inputs.audioUI"
+        "filename_prefix": {
+          "field": "inputs.filename_prefix"
         }
       },
       "kokorogenerator": {
