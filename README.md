@@ -19,23 +19,27 @@ py <script>.py [args]
 - `youtube-transcript-api` — transcrições
 - `opencv-python` — extração de frames
 - `requests` + `websockets` — integração ComfyUI
-- `youtube-transcript-api` — transcrições
+- `deepgram-sdk` — transcrição com timestamps
 
-API keys em `C:\Users\JOSE\.alfredo\.env` (apenas para advanced_keyword_researcher).
+API keys em `C:\Users\JOSE\.alfredo\.env`:
+- `DEEPGRAM_API_KEY` — transcribe_deepgram.py
 
 ## Lista de Scripts
 
 | Script | Função |
 |--------|--------|
 | `channel_videos_scraper.py` | Lista top vídeos do canal por views |
+| `video_downloader.py` | Baixa vídeo do YouTube (URL ou ID) |
+| `video_cutter.py` | Corta vídeos por timestamp (início/fim) |
 | `frames_extractor.py` | Extrai frames de vídeos (URL ou local) |
 | `thumbnail_downloader.py` | Baixa thumbnail de vídeo YouTube |
 | `transcript_downloader.py` | Baixa transcrição de vídeo YouTube |
+| `transcribe_deepgram.py` | Transcreve áudio/vídeo (Deepgram). Cache automático por hash do arquivo. Flags: `-l` idioma, `-f` formato, `-o` saída, `--no-cache` |
 | `split_script.py` | Divide roteiro em sentenças/chunks |
 | `run_workflow.py` | Executor de workflows ComfyUI |
 | `update_workflow_config.py` | Auto-gera workflow_config.json |
 | `utils.py` | Utilitários ComfyUI (server, websocket, IO) |
-| `advanced_keyword_researcher.py` | Análise de nicho YouTube (wrapper CLI) |
+| `advanced_keyword_researcher.py` | Análise de nicho YouTube (wrapper CLI) | |
 
 ## Subdiretórios
 

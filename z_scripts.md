@@ -70,6 +70,25 @@ py transcript_downloader.py "URL" -od "C:\output"
 
 ---
 
+## 6. transcribe_deepgram.py
+Transcreve áudio/vídeo local com timestamps usando Deepgram API.
+
+```bash
+py transcribe_deepgram.py "C:\video.mp4"
+py transcribe_deepgram.py "C:\video.mp4" -f transcricao
+py transcribe_deepgram.py "C:\video.mp4" -l pt -f transcricao -o "C:\out.txt"
+py transcribe_deepgram.py "C:\video.mp4" --no-cache
+```
+
+| Flag | Descrição |
+|------|-----------|
+| `-l` | Idioma (pt, en, es, fr, de, it, ja, nl, hi, ru, multi) |
+| `-f` | Formato: transcricao ou timestamps (default: timestamps) |
+| `-o` | Caminho do arquivo de saída (default: mesmo local do vídeo com _transcript.txt) |
+| `--no-cache` | Ignora cache e força nova transcrição |
+
+---
+
 ## 5. run_workflow.py
 Executor de workflows ComfyUI.
 

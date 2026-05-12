@@ -140,13 +140,14 @@ def extrair_id_video(url: str) -> str:
     return limpar_nome_arquivo(nome_arquivo) if nome_arquivo else "video_desconhecido"
 
 
-def criar_pasta_saida(id_video: str, output_dir: str = None) -> Path:
+def criar_pasta_saida(id_video: str, output_dir: str = None, video_path: str = None) -> Path:
     """
     Cria uma pasta específica para os frames do vídeo.
 
     Args:
         id_video: Identificador único do vídeo
         output_dir: Diretório base onde criar a pasta (opcional)
+        video_path: Caminho do vídeo (cria pasta no mesmo diretório do vídeo)
 
     Returns:
         Path object da pasta criada
@@ -154,12 +155,15 @@ def criar_pasta_saida(id_video: str, output_dir: str = None) -> Path:
     # Se output_dir for especificado, usa ele como base
     if output_dir:
         pasta_base = Path(output_dir)
+    elif video_path:
+        # Cria pasta no mesmo diretório do vídeo
+        pasta_base = Path(video_path).parent
     else:
         # Cria pasta na estrutura: frames/<id_video>/
         pasta_base = Path("frames")
     pasta_base.mkdir(parents=True, exist_ok=True)
 
-    pasta_saida = pasta_base / id_video
+    pasta_saida = pasta_base / f"{id_video}_frames"
     pasta_saida.mkdir(exist_ok=True)
 
     print(f"Pasta criada: {pasta_saida.absolute()}")
@@ -495,7 +499,7 @@ Examples:
     parser.add_argument('url', help='Video URL or file path (supports: http/https, file:///, local paths)')
     parser.add_argument('-od', '--output-dir', help='Output directory where frames folder will be created')
     parser.add_argument('-o', '--output', help='Output folder name (default: auto-generated based on video ID)')
-    parser.add_argument('-f', '--fps', type=int, default=1,
+    parser.add_argument('-f', '--fps', '--frames-per-second', type=int, default=1,
                         help='Frames per second to extract (default: 1)')
     parser.add_argument('--frames', type=int, default=None,
                         help='Number of frames equally distributed throughout video (overrides --fps)')
@@ -540,7 +544,7 @@ Examples:
     print()
     
     # 3. Cria pasta para os frames
-    pasta_output = criar_pasta_saida(id_video, args.output_dir)
+    pasta_output = criar_pasta_saida(id_video, args.output_dir, args.url if is_local_path else None)
     print()
     
     # 4. Determina o caminho do arquivo de vídeo
