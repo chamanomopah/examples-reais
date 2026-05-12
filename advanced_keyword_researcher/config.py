@@ -79,3 +79,16 @@ BASE_DELAY = 1.0
 
 CACHE_DIR = Path(__file__).parent / ".cache"
 CACHE_TTL_HOURS = 24
+
+# --- AI Model settings ---
+
+AVAILABLE_GEMINI_MODELS = {
+    "gemini-3-flash-preview": "Preview - High volume, fast (RECOMMENDED)",
+    "gemini-3.1-flash-lite-preview": "Preview - Ultra fast, low latency",
+    "gemini-2.5-flash": "GA - Balanced, production-ready",
+    "gemini-2.5-flash-lite": "GA - Maximum scale, minimum cost",
+    "gemini-2.0-flash": "GA - Legacy",
+    "gemini-flash-latest": "Latest Flash (alias)",
+}
+
+DEFAULT_MODEL = "gemini-3-flash-preview"

@@ -773,91 +773,54 @@ def _write_engagement(ws, engagement_data):
     _auto_width(ws)
 
 
-def _write_audience(ws, resp):
+def _write_audience_insights(ws, resp):
     ws.append(["Category", "Insight"])
     tat = resp.get("topicsAndTrends") or {}
-    intent = tat.get("audienceIntent", {})
-    psycho = tat.get("psychographics", {})
-    row = 2
+    insights = tat.get("audienceInsights", [])
 
-    if isinstance(intent, dict):
-        primary = intent.get("primaryIntent", "")
-        if primary:
-            ws.cell(row=row, column=1, value="Primary Intent")
-            ws.cell(row=row, column=2, value=primary)
-            row += 1
-
-        for s in intent.get("secondaryIntents", []):
-            ws.cell(row=row, column=1, value="Secondary Intent")
-            ws.cell(row=row, column=2, value=s)
-            row += 1
-
-        for p in intent.get("painPoints", []):
-            ws.cell(row=row, column=1, value="Pain Point")
-            ws.cell(row=row, column=2, value=p)
-            row += 1
-
-        for m in intent.get("motivations", []):
-            ws.cell(row=row, column=1, value="Motivation")
-            ws.cell(row=row, column=2, value=m)
-            row += 1
-
-    if isinstance(psycho, dict):
-        interests = psycho.get("interests", [])
-        if interests:
-            ws.cell(row=row, column=1, value="Interests")
-            ws.cell(row=row, column=2, value=", ".join(interests))
-            row += 1
-
-        values = psycho.get("values", [])
-        if values:
-            ws.cell(row=row, column=1, value="Values")
-            ws.cell(row=row, column=2, value=", ".join(values))
-            row += 1
-
-        for p in psycho.get("contentPreferences", []):
-            ws.cell(row=row, column=1, value="Content Preference")
-            ws.cell(row=row, column=2, value=p)
-            row += 1
+    for i, insight in enumerate(insights, 2):
+        if isinstance(insight, dict):
+            ws.cell(row=i, column=1, value=insight.get("category", ""))
+            ws.cell(row=i, column=2, value=insight.get("insight", ""))
 
     _style_header(ws, 1, 2)
     _auto_width(ws)
 
 
-def _write_topics(ws, resp):
-    ws.append(["Topic", "Videos", "Avg Views", "Angle", "Potential", "Reasoning"])
+def _write_trending_themes(ws, resp):
+    ws.append(["Theme", "Frequency", "Description"])
     tat = resp.get("topicsAndTrends") or {}
-    row = 2
+    themes = tat.get("trendingThemes", [])
 
-    discovered = tat.get("discoveredTopics", [])
-    for t in discovered:
-        if isinstance(t, dict):
-            ws.cell(row=row, column=1, value=t.get("topic", ""))
-            ws.cell(row=row, column=2, value=t.get("frequency", ""))
-            ws.cell(row=row, column=3, value=_fmt_int(t.get("avgViews", 0)))
-            row += 1
+    for i, theme in enumerate(themes, 2):
+        if isinstance(theme, dict):
+            ws.cell(row=i, column=1, value=theme.get("theme", ""))
+            ws.cell(row=i, column=2, value=theme.get("frequency", ""))
+            ws.cell(row=i, column=3, value=theme.get("description", ""))
 
-    suggested = tat.get("suggestedTopics", [])
-    for t in suggested:
-        if isinstance(t, dict):
-            ws.cell(row=row, column=1, value=t.get("topic", ""))
-            ws.cell(row=row, column=4, value=t.get("topic", ""))
-            ws.cell(row=row, column=5, value=t.get("opportunity", ""))
-            ws.cell(row=row, column=6, value=t.get("reasoning", ""))
-            row += 1
-
-    _style_header(ws, 1, 6)
+    _style_header(ws, 1, 3)
     _auto_width(ws)
 
 
-def _write_insights(ws, resp):
-    ws.append(["Insights"])
+def _write_topic_ideas(ws, resp):
+    ws.append(["Title", "Target Audience", "Goal", "Context", "Tone", "Narrative", "Reasoning", "Appeal", "Keyword Suggestion"])
     tat = resp.get("topicsAndTrends") or {}
-    summary = tat.get("summary", "")
-    if summary:
-        ws.cell(row=2, column=1, value=summary).alignment = WRAP_ALIGN
-    ws.column_dimensions["A"].width = 120
-    _style_header(ws, 1, 1)
+    ideas = tat.get("topicIdeas", [])
+
+    for i, idea in enumerate(ideas, 2):
+        if isinstance(idea, dict):
+            ws.cell(row=i, column=1, value=idea.get("title", ""))
+            ws.cell(row=i, column=2, value=idea.get("targetAudience", ""))
+            ws.cell(row=i, column=3, value=idea.get("goal", ""))
+            ws.cell(row=i, column=4, value=idea.get("context", ""))
+            ws.cell(row=i, column=5, value=idea.get("tone", ""))
+            ws.cell(row=i, column=6, value=idea.get("narrative", ""))
+            ws.cell(row=i, column=7, value=idea.get("reasoning", ""))
+            ws.cell(row=i, column=8, value=idea.get("appeal", ""))
+            ws.cell(row=i, column=9, value=idea.get("keywordSuggestion", ""))
+
+    _style_header(ws, 1, 9)
+    _auto_width(ws)
 
 
 def format_excel(resp: dict) -> bytes:
@@ -876,9 +839,9 @@ def format_excel(resp: dict) -> bytes:
         ("Title DNA - Words", lambda ws: _write_title_dna_words(ws, title_dna) if title_dna else ws.append(["No data"])),
         ("Title DNA - Patterns", lambda ws: _write_title_dna_patterns(ws, title_dna) if title_dna else ws.append(["No data"])),
         ("Engagement", lambda ws: _write_engagement(ws, engagement_data)),
-        ("Audience", lambda ws: _write_audience(ws, resp)),
-        ("Topics", lambda ws: _write_topics(ws, resp)),
-        ("Insights", lambda ws: _write_insights(ws, resp)),
+        ("Audience Insights", lambda ws: _write_audience_insights(ws, resp)),
+        ("Trending Themes", lambda ws: _write_trending_themes(ws, resp)),
+        ("Topic Ideas", lambda ws: _write_topic_ideas(ws, resp)),
     ]
 
     first = True

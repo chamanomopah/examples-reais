@@ -11,37 +11,33 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from scorer import format_number
 
 
-class DiscoveredTopic(BaseModel):
-    topic: str
+class AudienceInsight(BaseModel):
+    category: str
+    insight: str
+
+
+class TrendingTheme(BaseModel):
+    theme: str
     frequency: int
-    avgViews: int
+    description: str
 
 
-class SuggestedTopic(BaseModel):
-    topic: str
+class TopicIdea(BaseModel):
+    title: str
+    targetAudience: str
+    goal: str
+    context: str
+    tone: str
+    narrative: str
     reasoning: str
-    opportunity: str
-
-
-class AudienceIntent(BaseModel):
-    primaryIntent: str
-    secondaryIntents: list[str]
-    painPoints: list[str]
-    motivations: list[str]
-
-
-class Psychographics(BaseModel):
-    interests: list[str]
-    values: list[str]
-    contentPreferences: list[str]
+    appeal: str
+    keywordSuggestion: str
 
 
 class LLMTopicsResponse(BaseModel):
-    discoveredTopics: list[DiscoveredTopic]
-    suggestedTopics: list[SuggestedTopic]
-    audienceIntent: AudienceIntent
-    psychographics: Psychographics
-    summary: str
+    audienceInsights: list[AudienceInsight]
+    trendingThemes: list[TrendingTheme]
+    topicIdeas: list[TopicIdea]
 
 
 def build_prompt(
@@ -95,39 +91,40 @@ def build_prompt(
 Analyze this YouTube keyword data and return a JSON object with these exact fields:
 
 {{
-  "discoveredTopics": [
+  "audienceInsights": [
     {{
-      "topic": "descriptive topic name (concise, 5-10 words)",
-      "frequency": <integer, count of videos matching this topic>,
-      "avgViews": <integer, approximate average views for videos in this topic>
+      "category": "Subconscious Driver" | "Pain Point" | "Desire" | "Demographic Insight",
+      "insight": "specific insight text (one per category minimum)"
     }}
   ],
-  "suggestedTopics": [
+  "trendingThemes": [
     {{
-      "topic": "specific content angle idea",
-      "reasoning": "why this angle has potential",
-      "opportunity": "High" | "Medium" | "Low"
+      "theme": "theme name (concise, 3-8 words)",
+      "frequency": <integer, approximate count of videos matching this theme>,
+      "description": "why this theme works and what pattern it represents"
     }}
   ],
-  "audienceIntent": {{
-    "primaryIntent": "single sentence describing main audience goal",
-    "secondaryIntents": ["intent 1", "intent 2", "intent 3"],
-    "painPoints": ["pain point 1", "pain point 2"],
-    "motivations": ["motivation 1", "motivation 2"]
-  }},
-  "psychographics": {{
-    "interests": ["interest 1", "interest 2", "interest 3"],
-    "values": ["value 1", "value 2"],
-    "contentPreferences": ["preference 1", "preference 2"]
-  }},
-  "summary": "2-3 sentence synthesis of the keyword landscape"
+  "topicIdeas": [
+    {{
+      "title": "video title with hook",
+      "targetAudience": "specific audience segment",
+      "goal": "what the video delivers",
+      "context": "content context/format",
+      "tone": "tone descriptor",
+      "narrative": "First person" | "Second person",
+      "reasoning": "why this topic has potential",
+      "appeal": "High" | "Medium" | "Low",
+      "keywordSuggestion": "related keyword for research"
+    }}
+  ]
 }}
 
 Rules:
-- Return 5-7 discovered topics covering all major clusters
-- Return 5 suggested content angles
-- frequency values must sum to approximately {total_videos}
-- avgViews should be realistic based on the provided view data
+- Return 8-12 audience insights covering all categories
+- Return 5-7 trending themes
+- Return 5 topic ideas
+- frequency values should be realistic estimates based on the dataset
+- All insights must be grounded in the provided video data
 - Keep all text concise and actionable
 - Return ONLY valid JSON, no markdown fences"""
 
@@ -135,11 +132,11 @@ Rules:
 
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(min=2, max=30))
-def call_llm(prompt: str, api_key: str) -> dict:
+def call_llm(prompt: str, api_key: str, model: str = "gemini-3-flash") -> dict:
     client = genai.Client(api_key=api_key)
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model=model,
         contents=prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -178,17 +175,10 @@ def assemble_topics_and_trends(
 ) -> dict:
     audience = compute_audience_size(median, saturation)
 
-    discovered = llm_response.get("discoveredTopics", [])
-    suggested = llm_response.get("suggestedTopics", [])
-    intent = llm_response.get("audienceIntent", {})
-    psycho = llm_response.get("psychographics", {})
-
     return {
-        "discoveredTopics": discovered,
-        "suggestedTopics": suggested,
-        "audienceIntent": intent,
-        "psychographics": psycho,
-        "summary": llm_response.get("summary", ""),
+        "audienceInsights": llm_response.get("audienceInsights", []),
+        "trendingThemes": llm_response.get("trendingThemes", []),
+        "topicIdeas": llm_response.get("topicIdeas", []),
         "estimatedAudienceSize": audience["size"],
         "audienceSizeExplanation": audience["explanation"],
     }

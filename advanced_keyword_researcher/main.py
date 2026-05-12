@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 
 import click
 
-from config import load_env, MAX_PAGES, CACHE_DIR, CACHE_TTL_HOURS, VIDEO_DURATION_FILTER
+from config import load_env, MAX_PAGES, CACHE_DIR, CACHE_TTL_HOURS, VIDEO_DURATION_FILTER, DEFAULT_MODEL, AVAILABLE_GEMINI_MODELS
 from cache import load_cache, save_cache, clear_cache, get_cache_path
 from collector import (
     YouTubeCollector,
@@ -48,6 +48,7 @@ def cli():
 @click.option("--from", "date_from", default=None, type=str, help="Start date YYYY-MM-DD (mutually exclusive with --last-days)")
 @click.option("--to", "date_to", default=None, type=str, help="End date YYYY-MM-DD (default: today, mutually exclusive with --last-days)")
 @click.option("--output-dir", "output_dir", default=None, type=click.Path(), help="Custom output directory (mutually exclusive with --output)")
+@click.option("--model", "llm_model", default=DEFAULT_MODEL, type=click.Choice(list(AVAILABLE_GEMINI_MODELS.keys()), case_sensitive=False), help=f"AI model for LLM analysis (default: {DEFAULT_MODEL})")
 def research(
     keyword: str,
     output_fmt: str,
@@ -63,6 +64,7 @@ def research(
     date_from: str | None,
     date_to: str | None,
     output_dir: str | None,
+    llm_model: str,
 ):
     # Validate --output-dir / --output mutual exclusivity
     if output_dir and output_file:
@@ -407,7 +409,7 @@ def research(
     # Step 7: LLM analysis
     topics_and_trends = None
     if not skip_llm and gemini_api_key:
-        click.echo("Running LLM analysis...", err=True)
+        click.echo(f"Running LLM analysis... (model: {llm_model})", err=True)
         try:
             from analyzer import build_prompt, call_llm, assemble_topics_and_trends
 
@@ -422,7 +424,7 @@ def research(
                 "marketAnalysis": market_analysis,
             }
             prompt = build_prompt(keyword, top_videos, scores_dict)
-            llm_response = call_llm(prompt, gemini_api_key)
+            llm_response = call_llm(prompt, gemini_api_key, llm_model)
             topics_and_trends = assemble_topics_and_trends(
                 llm_response, views_median["median"], market_analysis["saturation"]
             )
