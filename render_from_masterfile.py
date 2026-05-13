@@ -39,14 +39,28 @@ def build_complex_filter(scenes: list, width: int, height: int) -> str:
     return ";".join(filters)
 
 
-def build_concat_file(scenes: list, base_dir: Path, output_txt: Path) -> Path:
+def build_concat_file(scenes: list, base_dir: Path, output_txt: Path, image_subdir: str = "image") -> Path:
     """Cria arquivo concat para FFmpeg"""
+    image_dir = base_dir / image_subdir
     with open(output_txt, "w") as f:
         for scene in scenes:
-            img_path = base_dir / scene["image"]
+            img_path = image_dir / scene["image"]
             f.write(f"file '{img_path.absolute()}'\n")
             f.write(f"duration {scene['duration']}\n")
     return output_txt
+
+
+def get_pad_filter(position: str, width: int, height: int) -> str:
+    """Retorna filtro pad para posicionar imagem no canvas"""
+    # x,y para cada posição
+    positions = {
+        "center": f"(ow-iw)/2:(oh-ih)/2",
+        "top-left": "0:0",
+        "top-right": f"ow-iw:0",
+        "bottom-left": f"0:oh-ih",
+        "bottom-right": f"ow-iw:oh-ih",
+    }
+    return f"pad={width}:{height}:{positions.get(position, positions['center'])}:black"
 
 
 def render_with_concat(
@@ -54,7 +68,8 @@ def render_with_concat(
     output: Path,
     width: int = 1920,
     height: int = 1080,
-    fps: int = 30
+    fps: int = 30,
+    position: str = "center"
 ) -> None:
     """Renderiza usando método concat demuxer (simples, eficiente)"""
 
@@ -65,9 +80,14 @@ def render_with_concat(
     audio_path = base_dir / data["audio"]
     scenes = data["scenes"]
 
-    # Cria arquivo concat
+    # Cria arquivo concat (imagens em subdiretório image/)
     concat_file = base_dir / "_concat.txt"
-    build_concat_file(scenes, base_dir, concat_file)
+    build_concat_file(scenes, base_dir, concat_file, image_subdir="image")
+
+    # Filtro de vídeo: scale + posicionar
+    vf = f"scale={width}:{height}"
+    if position != "stretch":
+        vf += f",{get_pad_filter(position, width, height)}"
 
     # Comando FFmpeg
     cmd = [
@@ -76,7 +96,7 @@ def render_with_concat(
         "-safe", "0",
         "-i", str(concat_file),
         "-i", str(audio_path),
-        "-vf", f"scale={width}:{height}",
+        "-vf", vf,
         "-r", str(fps),
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
@@ -88,6 +108,7 @@ def render_with_concat(
     print(f"Renderizando: {output}")
     print(f"  Cenas: {len(scenes)}")
     print(f"  Resolução: {width}x{height}")
+    print(f"  Posição: {position}")
     print(f"  Áudio: {audio_path.name}")
 
     subprocess.run(cmd, check=True)
@@ -153,6 +174,8 @@ def main():
     parser.add_argument("--width", type=int, default=1920, help="Largura (default: 1920)")
     parser.add_argument("--height", type=int, default=1080, help="Altura (default: 1080)")
     parser.add_argument("--fps", type=int, default=30, help="FPS (default: 30)")
+    parser.add_argument("--position", choices=["center", "top-left", "top-right", "bottom-left", "bottom-right", "stretch"],
+                        default="stretch", help="Posição da imagem (default: stretch)")
     parser.add_argument("--method", choices=["concat", "complex"], default="concat",
                         help="Método de renderização (default: concat)")
 
@@ -164,7 +187,8 @@ def main():
             output=Path(args.output),
             width=args.width,
             height=args.height,
-            fps=args.fps
+            fps=args.fps,
+            position=args.position
         )
     else:
         render_with_complex_filter(

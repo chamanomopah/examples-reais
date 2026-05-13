@@ -16,8 +16,8 @@ from typing import List, Dict
 def parse_transcript(transcript_path: Path) -> List[Dict[str, any]]:
     """Parse WebVTT transcript para lista de {word, start, end}"""
     entries = []
-    # Aceita HH:MM:SS.mmm ou MM:SS.mmm
-    pattern = re.compile(r"\[(\d+:\d+:\d+\.\d+) --> (\d+:\d+:\d+\.\+)\] (.+)")
+    # Formato: [HH:MM:SS.mmm --> HH:MM:SS.mmm] word
+    pattern = re.compile(r"\[(\d+:\d+:\d+\.\d+) --> (\d+:\d+:\d+\.\d+)\] (.+)")
 
     with open(transcript_path, "r", encoding="utf-8") as f:
         for line in f:
