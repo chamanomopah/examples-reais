@@ -40,13 +40,24 @@ def build_complex_filter(scenes: list, width: int, height: int) -> str:
 
 
 def build_concat_file(scenes: list, base_dir: Path, output_txt: Path, image_subdir: str = "image") -> Path:
-    """Cria arquivo concat para FFmpeg"""
+    """Cria arquivo concat para FFmpeg estendendo cenas para preencher gaps"""
     image_dir = base_dir / image_subdir
+
     with open(output_txt, "w") as f:
-        for scene in scenes:
+        for i, scene in enumerate(scenes):
             img_path = image_dir / scene["image"]
+
+            # Duração estendida: do start desta cena até o start da próxima
+            if i < len(scenes) - 1:
+                # Estende até o início da próxima cena
+                extended_duration = scenes[i + 1]["start"] - scene["start"]
+            else:
+                # Última cena: usa duração original
+                extended_duration = scene["duration"]
+
             f.write(f"file '{img_path.absolute()}'\n")
-            f.write(f"duration {scene['duration']}\n")
+            f.write(f"duration {extended_duration:.3f}\n")
+
     return output_txt
 
 
@@ -78,11 +89,23 @@ def render_with_concat(
 
     base_dir = masterfile.parent
     audio_path = base_dir / data["audio"]
+
+    # Tenta encontrar áudio se o caminho exato não exister
+    if not audio_path.exists():
+        # Busca variações comuns: audio1.flac -> audio_1.flac, etc
+        for pattern in [audio_path.name.replace("audio", "audio_"),
+                        f"audio_{data['audio'].replace('audio', '')}",
+                        data["audio"]]:
+            test_path = base_dir / pattern
+            if test_path.exists():
+                audio_path = test_path
+                break
+
     scenes = data["scenes"]
 
-    # Cria arquivo concat (imagens em subdiretório image/)
+    # Cria arquivo concat (imagens em subdiretório images/)
     concat_file = base_dir / "_concat.txt"
-    build_concat_file(scenes, base_dir, concat_file, image_subdir="image")
+    build_concat_file(scenes, base_dir, concat_file, image_subdir="images")
 
     # Filtro de vídeo: scale + posicionar
     vf = f"scale={width}:{height}"
@@ -131,12 +154,23 @@ def render_with_complex_filter(
 
     base_dir = masterfile.parent
     audio_path = base_dir / data["audio"]
+
+    # Tenta encontrar áudio se o caminho exato não exister
+    if not audio_path.exists():
+        for pattern in [audio_path.name.replace("audio", "audio_"),
+                        f"audio_{data['audio'].replace('audio', '')}",
+                        data["audio"]]:
+            test_path = base_dir / pattern
+            if test_path.exists():
+                audio_path = test_path
+                break
+
     scenes = data["scenes"]
 
     # Inputs
     inputs = []
     for scene in scenes:
-        inputs.extend(["-loop", "1", "-i", str(base_dir / scene["image"])])
+        inputs.extend(["-loop", "1", "-i", str(base_dir / "images" / scene["image"])])
     inputs.extend(["-i", str(audio_path)])
 
     # Filtro

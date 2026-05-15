@@ -31,8 +31,8 @@ def load_workflow(workflow_path):
         return json.load(f)
 
 
-async def run_workflow(workflow, workflow_name="workflow", client_id="python_client", save_outputs=True, custom_output_dir=None):
-    """Executa workflow no ComfyUI e monitora via WebSocket
+async def run_workflow(workflow, workflow_name="workflow", client_id="python_client", save_outputs=True, custom_output_dir=None, filename_prefix=None):
+    """Executa workflow no ComfyUI e monitora via polling
 
     Args:
         workflow: Dicionário do workflow ComfyUI
@@ -40,6 +40,7 @@ async def run_workflow(workflow, workflow_name="workflow", client_id="python_cli
         client_id: ID do cliente para ComfyUI
         save_outputs: Se True, baixa e salva os arquivos gerados
         custom_output_dir: Diretório customizado para salvar arquivos (Path ou str)
+        filename_prefix: Prefixo do arquivo para detectar sobrescrita
     """
 
     # Enviar workflow
@@ -47,134 +48,150 @@ async def run_workflow(workflow, workflow_name="workflow", client_id="python_cli
         "prompt": workflow,
         "client_id": client_id
     }
-
-    response = requests.post(f"{COMFYUI_SERVER}/prompt", json=prompt_data)
+    response = requests.post(f"{COMFYUI_SERVER}/prompt", json=prompt_data, timeout=10)
     result = response.json()
 
     if "prompt_id" not in result:
         raise Exception(f"Erro ao enviar workflow: {result}")
 
     prompt_id = result["prompt_id"]
-    print(f"📝 Workflow enviado: {prompt_id}")
+    print(f"📝 {prompt_id[:8]}...")
 
-    # Monitorar via WebSocket
-    print("⏳ Aguardando processamento...")
+    # Polling até completar
+    print("⏳ ")
+    poll_count = 0
+    max_attempts = 120  # 2 minutos
 
-    async with websockets.connect(WS_SERVER) as websocket:
-        while True:
-            try:
-                message = await asyncio.wait_for(websocket.recv(), timeout=30.0)
-                data = json.loads(message)
+    while poll_count < max_attempts:
+        await asyncio.sleep(0.5)
+        poll_count += 1
 
-                # Verificar tipo de mensagem
-                if data.get("type") == "executing":
-                    if data.get("data", {}).get("node") is None:
-                        print("✅ Processamento concluído!")
+        try:
+            r = requests.get(f"{COMFYUI_SERVER}/history/{prompt_id}", timeout=2)
+            if r.status_code == 200:
+                data = r.json()
+                if prompt_id in data:
+                    outputs = data[prompt_id].get("outputs", {})
+                    if outputs:
+                        print()  # Nova linha
                         break
+        except:
+            pass
 
-                # Mostrar progresso
-                elif data.get("type") == "progress":
-                    progress_data = data.get("data", {})
-                    value = progress_data.get("value", 0)
-                    max_value = progress_data.get("max", 100)
-                    print(f"🔄 Progresso: {value}/{max_value}")
+        # Progresso visual
+        if poll_count % 10 == 0:
+            print(".", end="", flush=True)
 
-                # Mostrar execução de nós
-                elif data.get("type") == "execution_cached":
-                    print("💾 Usando cache")
+    else:
+        raise Exception("Timeout: workflow não completou")
 
-                elif data.get("type") == "executing":
-                    node_id = data.get("data", {}).get("node")
-                    if node_id:
-                        print(f"⚙️  Executando nó: {node_id}")
-
-            except asyncio.TimeoutError:
-                print("⚠️  Timeout na WebSocket, verificando status...")
-                break
-            except Exception as e:
-                print(f"⚠️  Erro no WebSocket: {e}")
-                break
-
-    # Obter resultados
-    print("📊 Buscando resultados...")
-    history_response = requests.get(f"{COMFYUI_SERVER}/history/{prompt_id}")
-    history = history_response.json()
-
+    # Buscar resultados
     saved_files = []
 
-    if prompt_id in history:
-        outputs = history[prompt_id].get("outputs", {})
+    if custom_output_dir:
+        output_dir = Path(custom_output_dir)
+    else:
+        output_dir = Path("outputs") / workflow_name
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-        for node_id, node_output in outputs.items():
-            # Processar imagens
-            if "images" in node_output:
-                for image_info in node_output["images"]:
-                    filename = image_info["filename"]
-                    subfolder = image_info.get("subfolder", "")
-                    image_type = image_info.get("type", "output")
+    r = requests.get(f"{COMFYUI_SERVER}/history/{prompt_id}", timeout=10)
+    data = r.json()
 
-                    # Baixar/salvar imagem
-                    if save_outputs:
-                        params = {
-                            "filename": filename,
-                            "subfolder": subfolder,
-                            "type": image_type
-                        }
+    if prompt_id not in data:
+        raise Exception("Workflow não encontrado no histórico")
 
-                        response = requests.get(f"{COMFYUI_SERVER}/view", params=params)
+    outputs = data[prompt_id].get("outputs", {})
 
-                        # Criar diretório de saída (customizado ou padrão)
-                        if custom_output_dir:
-                            output_dir = Path(custom_output_dir)
-                        else:
-                            output_dir = Path("outputs") / workflow_name
+    for node_id, node_output in outputs.items():
+        if "images" in node_output:
+            for img in node_output["images"]:
+                f = await download_output(
+                    filename=img["filename"],
+                    subfolder=img.get("subfolder", ""),
+                    file_type=img.get("type", "output"),
+                    output_dir=output_dir,
+                    filename_prefix=filename_prefix
+                )
+                if f:
+                    saved_files.append(f)
 
-                        output_dir.mkdir(parents=True, exist_ok=True)
+        if "audio" in node_output:
+            for aud in node_output["audio"]:
+                f = await download_output(
+                    filename=aud["filename"],
+                    subfolder=aud.get("subfolder", ""),
+                    file_type=aud.get("type", "output"),
+                    output_dir=output_dir,
+                    filename_prefix=filename_prefix
+                )
+                if f:
+                    saved_files.append(f)
 
-                        output_path = output_dir / filename
-                        with open(output_path, 'wb') as f:
-                            f.write(response.content)
-
-                        saved_files.append(str(output_path))
-                        print(f"💾 Salvo: {output_path}")
-                    else:
-                        saved_files.append(filename)
-
-            # Processar áudio
-            if "audio" in node_output:
-                for audio_info in node_output["audio"]:
-                    filename = audio_info["filename"]
-                    subfolder = audio_info.get("subfolder", "")
-                    audio_type = audio_info.get("type", "output")
-
-                    # Baixar/salvar áudio
-                    if save_outputs:
-                        params = {
-                            "filename": filename,
-                            "subfolder": subfolder,
-                            "type": audio_type
-                        }
-
-                        response = requests.get(f"{COMFYUI_SERVER}/view", params=params)
-
-                        # Criar diretório de saída (customizado ou padrão)
-                        if custom_output_dir:
-                            output_dir = Path(custom_output_dir)
-                        else:
-                            output_dir = Path("outputs") / workflow_name
-
-                        output_dir.mkdir(parents=True, exist_ok=True)
-
-                        output_path = output_dir / filename
-                        with open(output_path, 'wb') as f:
-                            f.write(response.content)
-
-                        saved_files.append(str(output_path))
-                        print(f"💾 Salvo: {output_path}")
-                    else:
-                        saved_files.append(filename)
+        if "videos" in node_output:
+            for vid in node_output["videos"]:
+                f = await download_output(
+                    filename=vid["filename"],
+                    subfolder=vid.get("subfolder", ""),
+                    file_type=vid.get("type", "output"),
+                    output_dir=output_dir,
+                    filename_prefix=filename_prefix
+                )
+                if f:
+                    saved_files.append(f)
 
     return saved_files
+
+
+async def download_output(filename, subfolder, file_type, output_dir, filename_prefix=None, max_retries=3):
+    """Baixa arquivo do ComfyUI com retry e evita sobrescrita"""
+    params = {
+        "filename": filename,
+        "subfolder": subfolder,
+        "type": file_type
+    }
+
+    # Se filename tem nome temporário e temos prefixo, usar prefixo como nome base
+    if filename_prefix and ("ComfyUI_temp" in filename or "temp_" in filename):
+        extension = Path(filename).suffix
+        filename = f"{filename_prefix}{extension}"
+
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(f"{COMFYUI_SERVER}/view", params=params, timeout=30)
+            response.raise_for_status()
+
+            # Verificar sobrescrita
+            output_path = output_dir / filename
+            if output_path.exists():
+                if filename_prefix:
+                    # Gerar novo nome
+                    stem = output_path.stem.split('_')[0]  # Pega prefixo original
+                    suffix = output_path.suffix
+                    counter = 1
+                    while output_path.exists():
+                        new_name = f"{stem}_{counter}{suffix}"
+                        output_path = output_dir / new_name
+                        counter += 1
+                else:
+                    # Adicionar timestamp
+                    stem = output_path.stem
+                    suffix = output_path.suffix
+                    import time
+                    output_path = output_dir / f"{stem}_{int(time.time())}{suffix}"
+
+            with open(output_path, 'wb') as f:
+                f.write(response.content)
+
+            print(f"💾 Salvo: {output_path}")
+            return str(output_path)
+
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"❌ Erro baixando {filename}: {e}")
+                return None
+            await asyncio.sleep(0.5)
+
+    return None
 
 
 def get_workflow_params(workflow_path):

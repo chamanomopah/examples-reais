@@ -21,20 +21,27 @@ sys.path.insert(0, str(Path(__file__).parent))
 from utils import check_server, run_workflow
 
 WORKFLOWS_DIR = Path("workflows_api_converted")
-OUTPUT_DIR = Path("ComfyUI/output")
 
-def get_next_filename(prefix, extension="png"):
-    """Retorna próximo número disponível (ex: image_1, image_2)"""
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    pattern = re.compile(rf"^{prefix}_(\d+)\.{extension}$")
+def get_next_filename(prefix, output_dir, extension="png"):
+    """Retorna próximo número disponível (ex: image_1, image_2)
+
+    Procura arquivos como prefix_1_*.ext, prefix_2_*.ext, etc
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Padrão: prefix_NUMERO_sufixoqualquer.ext
+    # ComfyUI salva como: prefix_1_00001_.png
+    pattern = re.compile(rf"^{re.escape(prefix)}_(\d+)_.*{re.escape(extension)}$")
 
     max_num = 0
-    if OUTPUT_DIR.exists():
-        for f in OUTPUT_DIR.iterdir():
-            match = pattern.match(f.name)
-            if match:
-                num = int(match.group(1))
-                max_num = max(max_num, num)
+    if output_dir.exists():
+        for f in output_dir.iterdir():
+            if f.is_file():
+                match = pattern.match(f.name)
+                if match:
+                    num = int(match.group(1))
+                    max_num = max(max_num, num)
 
     return f"{prefix}_{max_num + 1}"
 CONFIG_FILE = Path("workflow_config.json")
@@ -191,16 +198,29 @@ def parse_args():
 
 
 def parse_params(params_list):
-    """Converte lista de parâmetros para dict"""
+    """Converte lista de parâmetros para dict. Se valor é arquivo, lê conteúdo."""
     params = {}
     for param in params_list:
         if '=' in param:
             key, value = param.split('=', 1)
-            # Tentar converter para tipo apropriado
-            if value.isdigit():
+
+            # Verificar se é caminho de arquivo existente
+            test_path = Path(value)
+            if test_path.exists() and test_path.is_file():
+                # Ler conteúdo do arquivo
+                try:
+                    with open(test_path, 'r', encoding='utf-8') as f:
+                        value = f.read()
+                except Exception as e:
+                    print(f"⚠️  Erro lendo arquivo {value}: {e}")
+                    continue
+
+            # Tentar converter para tipo apropriado (só se não leu arquivo)
+            elif value.isdigit():
                 value = int(value)
-            elif value.replace('.', '').isdigit():
+            elif value.replace('.', '').replace('-', '').replace('+', '').isdigit():
                 value = float(value)
+
             params[key] = value
     return params
 
@@ -261,42 +281,55 @@ async def main():
     # Parse parâmetros
     params = parse_params(args.params)
 
+    # Determinar diretório de saída ANTES do auto-incremento
+    output_dir = Path(args.output_dir) if args.output_dir else Path("outputs") / workflow_key
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     # Auto-incremento se --name não fornecido
+    filename_prefix = None
     if not args.name:
-        # Encontrar tipo de output e prefixo padrão
+        # Detectar tipo de output e usar prefixo padrão
         default_prefix = None
-        output_type = None
+        extension = None
 
         for node_id, node in workflow.items():
             if isinstance(node, dict):
                 class_type = node.get("class_type", "")
-                if class_type == "SaveImage":
-                    default_prefix = node["inputs"].get("filename_prefix", "image")
-                    output_type = "image"
+                if class_type in ("SaveImage", "PreviewImage", "SaveImageWebP"):
+                    default_prefix = "image"
+                    extension = "png"
                     break
-                elif class_type == "PreviewAudio":
-                    default_prefix = node["inputs"].get("filename_prefix", "audio")
-                    output_type = "audio"
+                elif class_type in ("PreviewAudio", "SaveAudio"):
+                    default_prefix = "audio"
+                    extension = "wav"
+                    break
+                elif class_type in ("SaveVideoWebm", "SaveVideoWEBP"):
+                    default_prefix = "video"
+                    extension = "webm"
                     break
 
-        if output_type == "image":
-            args.name = get_next_filename(default_prefix, "png")
-        elif output_type == "audio":
-            args.name = get_next_filename(default_prefix, "wav")
+        if default_prefix:
+            args.name = get_next_filename(default_prefix, output_dir, extension)
+            filename_prefix = args.name
 
     # Aplicar nome (customizado ou auto-incrementado)
     for node_id, node in workflow.items():
         if isinstance(node, dict):
             class_type = node.get("class_type", "")
-            if class_type == "SaveImage":
+            if class_type in ("SaveImage", "PreviewImage", "SaveImageWebP"):
                 if "inputs" in node and "filename_prefix" in node["inputs"]:
                     node["inputs"]["filename_prefix"] = args.name
-                print(f"3. Nome da imagem: {args.name}")
+                print(f"3. Nome: {args.name}")
                 break
-            elif class_type == "PreviewAudio":
+            elif class_type in ("PreviewAudio", "SaveAudio"):
                 if "inputs" in node and "filename_prefix" in node["inputs"]:
                     node["inputs"]["filename_prefix"] = args.name
-                print(f"3. Nome do áudio: {args.name}")
+                print(f"3. Nome: {args.name}")
+                break
+            elif class_type in ("SaveVideoWebm", "SaveVideoWEBP"):
+                if "inputs" in node and "filename_prefix" in node["inputs"]:
+                    node["inputs"]["filename_prefix"] = args.name
+                print(f"3. Nome: {args.name}")
                 break
 
     if params:
@@ -311,16 +344,14 @@ async def main():
     print("4. Executando workflow...")
     print("-" * 50)
 
-    # Determinar diretório de saída
-    output_dir = Path(args.output_dir) if args.output_dir else None
-
     try:
         saved_files = await run_workflow(
             workflow=workflow,
             workflow_name=workflow_key,
             client_id=f"python_{workflow_key}",
             save_outputs=True,
-            custom_output_dir=output_dir
+            custom_output_dir=output_dir,
+            filename_prefix=filename_prefix
         )
 
         print("-" * 50)
@@ -332,10 +363,13 @@ async def main():
                 print(f"  📁 {file_path}")
         else:
             print("⚠️  Executou mas não salvou arquivos")
+            return 1
 
     except Exception as e:
         print(f"❌ Erro: {e}")
-        return
+        return 1
+
+    return 0
 
 
 if __name__ == "__main__":

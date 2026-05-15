@@ -1,12 +1,28 @@
 import sys
 import re
 import os
+import argparse
 from pathlib import Path
 
-def split_script(input_path, output_path="script_cutted.md", chunk_lines=None):
+def split_script(input_path, output_dir=None, sentences=False):
     with open(input_path, "r", encoding="utf-8") as f:
         content = f.read()
 
+    input_dir = Path(input_path).parent
+
+    if output_dir:
+        output_path = Path(output_dir)
+    else:
+        output_path = input_dir / "chunks"
+
+    output_path.mkdir(exist_ok=True, parents=True)
+
+    if sentences:
+        split_by_sentences(content, output_path)
+    else:
+        split_by_chunks(content, output_path)
+
+def split_by_sentences(content, output_path):
     # Remove tudo depois de ## descrição (ou similar)
     content = re.split(r"^##\s+(descrição|description|Descrição)", content, flags=re.MULTILINE | re.IGNORECASE)[0]
 
@@ -163,56 +179,68 @@ def split_script(input_path, output_path="script_cutted.md", chunk_lines=None):
             unique_final.append(f)
 
     # Escreve o output
-    input_dir = Path(input_path).parent
-    output_full_path = input_dir / output_path
-    with open(output_full_path, "w", encoding="utf-8") as f:
+    output_file = output_path / "script_split.md"
+    with open(output_file, "w", encoding="utf-8") as f:
         for line in unique_final:
             f.write(line + "\n")
 
-    print(f"Salvo: {output_full_path}")
+    print(f"Salvo: {output_file}")
     print(f"Total de linhas: {len(unique_final)}")
 
-    # Se chunk_lines for especificado, cria os chunks
-    if chunk_lines:
-        storyboard_dir = input_dir / "storyboard"
-        storyboard_dir.mkdir(exist_ok=True)
+def split_by_chunks(content, output_path, chunk_lines=50):
+    # Remove tudo depois de ## descrição (ou similar)
+    content = re.split(r"^##\s+(descrição|description|Descrição)", content, flags=re.MULTILINE | re.IGNORECASE)[0]
 
-        # Divide em chunks
-        total_lines = len(unique_final)
-        num_chunks = (total_lines + chunk_lines - 1) // chunk_lines
+    # Remove linhas que começam com #, *, -
+    lines = content.split("\n")
+    cleaned = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(("#", "*", "-", "---")):
+            continue
+        if stripped.startswith("**") and stripped.endswith("**:"):
+            continue
+        cleaned.append(stripped)
 
-        for i in range(num_chunks):
-            start_idx = i * chunk_lines
-            end_idx = min((i + 1) * chunk_lines, total_lines)
-            chunk = unique_final[start_idx:end_idx]
+    # Divide em chunks de ~50 linhas
+    chunks = []
+    current_chunk = []
 
-            chunk_filename = f"script_chuck{i + 1}.md"
-            chunk_path = storyboard_dir / chunk_filename
+    for line in cleaned:
+        current_chunk.append(line)
+        if len(current_chunk) >= chunk_lines:
+            chunks.append(current_chunk)
+            current_chunk = []
 
-            with open(chunk_path, "w", encoding="utf-8") as f:
-                for line in chunk:
+    if current_chunk:
+        chunks.append(current_chunk)
+
+    # Salva os chunks
+    for i, chunk in enumerate(chunks):
+        chunk_filename = f"chunk_{i + 1}.md"
+        chunk_path = output_path / chunk_filename
+
+        with open(chunk_path, "w", encoding="utf-8") as f:
+            for j, line in enumerate(chunk):
+                if j == len(chunk) - 1:
+                    f.write(line)  # última linha sem \n
+                else:
                     f.write(line + "\n")
 
-            print(f"Chunk {i + 1}: {chunk_path} ({len(chunk)} linhas)")
+        total_words = sum(len(s.split()) for s in chunk)
+        print(f"Chunk {i + 1}: {chunk_path} ({len(chunk)} linhas, {total_words} palavras)")
 
-        print(f"Total de chunks: {num_chunks}")
+    print(f"Total de chunks: {len(chunks)}")
+    print(f"Total de linhas: {sum(len(c) for c in chunks)}")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Uso: python split_script.py <caminho_do_script> [-n <linhas_por_chunk>]")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="Divide roteiro em chunks ou sentenças")
+    parser.add_argument("input_path", help="Caminho do script de entrada")
+    parser.add_argument("--output", "-o", help="Pasta de saída (default: ./chunks)")
+    parser.add_argument("--sentences", "-s", action="store_true", help="Dividir por sentenças (comportamento anterior)")
 
-    input_path = sys.argv[1]
-    chunk_lines = None
+    args = parser.parse_args()
 
-    # Parse flag -n
-    if "-n" in sys.argv:
-        idx = sys.argv.index("-n")
-        if idx + 1 < len(sys.argv):
-            try:
-                chunk_lines = int(sys.argv[idx + 1])
-            except ValueError:
-                print("Erro: -n requer um número inteiro")
-                sys.exit(1)
-
-    split_script(input_path, chunk_lines=chunk_lines)
+    split_script(args.input_path, output_dir=args.output, sentences=args.sentences)

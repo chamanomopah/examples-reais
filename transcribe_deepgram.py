@@ -90,10 +90,11 @@ def transcribe(file_path: str, language: str = "en", use_cache: bool = True):
 
     response = client.listen.v1.media.transcribe_file(
         request=buffer_data,
-        model="nova-3",
+        model="nova-2",
         language=lang,
         smart_format=True,
-        utterances=True,
+        utterances=False,
+        paragraphs=False,
     )
 
     result = response.results.channels[0]

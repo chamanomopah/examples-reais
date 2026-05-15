@@ -187,12 +187,18 @@ cd C:\Users\JOSE\.alfredo\.scripts & python transcribe_deepgram.py "video.mp4" -
 ```
 
 ### split_script.py
-Divide roteiro em sentenças
+Divide roteiro em chunks (50 linhas por chunk, padrão) ou único arquivo de sentenças
 
-**Básico:**
+**Básico (chunks):**
 ```bash
 cd C:\Users\JOSE\.alfredo\.scripts & python split_script.py "C:\Users\JOSE\alfredo\canal1\videos\video1\script.md"
-cd C:\Users\JOSE\.alfredo\.scripts & python split_script.py "script.md" --output "script_split.md"
+cd C:\Users\JOSE\.alfredo\.scripts & python split_script.py "script.md" --output "C:\Users\JOSE\alfredo\canal1\videos\video1\chunks"
+```
+
+**Dividir por sentenças (arquivo único):**
+```bash
+cd C:\Users\JOSE\.alfredo\.scripts & python split_script.py "script.md" --sentences
+cd C:\Users\JOSE\.alfredo\.scripts & python split_script.py "script.md" -s -o "chunks"
 ```
 
 **Edge cases:**
@@ -204,7 +210,34 @@ cd C:\Users\JOSE\.alfredo\.scripts & python split_script.py "script_sujo.md"
 cd C:\Users\JOSE\.alfredo\.scripts & python split_script.py "..\..\canal1\videos\video1\script.md"
 
 # Script com abreviações (Dr, Mr, etc) - não divide no meio
-cd C:\Users\JOSE\.alfredo\.scripts & python split_script.py "script_medico.md"
+cd C:\Users\JOSE\.alfredo\.scripts & python split_script.py "script_medico.md" --sentences
+```
+
+### join_files.py
+Junta arquivos de uma pasta em um único arquivo (ordem crescente natural)
+
+**Básico:**
+```bash
+cd C:\Users\JOSE\.alfredo\.scripts & python join_files.py "C:\Users\JOSE\alfredo\canal3\videos\video1\img_prompt_chuncks" --output "image_prompt.md"
+cd C:\Users\JOSE\.alfredo\.scripts & python join_files.py "chunks/" --output "script_unido.md"
+```
+
+**Edge cases:**
+```bash
+# Salvar em outra pasta
+cd C:\Users\JOSE\.alfredo\.scripts & python join_files.py "chunks/" --output "result.md" --output-dir "C:\Users\JOSE\alfredo\output"
+
+# Padrão de arquivo customizado
+cd C:\Users\JOSE\.alfredo\.scripts & python join_files.py "chunks/" --pattern "*.txt"
+
+# Sem separador entre arquivos
+cd C:\Users\JOSE\.alfredo\.scripts & python join_files.py "chunks/" --separator ""
+
+# Separador customizado
+cd C:\Users\JOSE\.alfredo\.scripts & python join_files.py "chunks/" --separator "---"
+
+# Ordem natural: chunk_1.md, chunk_2.md, chunk_10.md (não chunk_1, chunk_10, chunk_2)
+cd C:\Users\JOSE\.alfredo\.scripts & python join_files.py "chunks/"
 ```
 
 ### run_workflow.py
@@ -315,6 +348,7 @@ cd C:\Users\JOSE\.alfredo\.scripts & python render_from_masterfile.py --masterfi
 | `transcript_downloader.py` | Baixa transcrição de vídeo YouTube |
 | `transcribe_deepgram.py` | Transcreve áudio/vídeo (Deepgram). Cache automático por hash do arquivo. Flags: `-l` idioma, `-f` formato, `-o` saída, `--no-cache` |
 | `split_script.py` | Divide roteiro em sentenças/chunks |
+| `join_files.py` | Junta arquivos de uma pasta em um único arquivo |
 | `run_workflow.py` | Executor de workflows ComfyUI |
 | `update_workflow_config.py` | Auto-gera workflow_config.json |
 | `build_masterfile.py` | Gera masterfile.json (sync imagens + áudio + timestamps) |
