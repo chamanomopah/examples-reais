@@ -23,6 +23,9 @@ cd C:\Users\JOSE\.alfredo\.scripts & python <script>.py [args]
 
 API keys em `C:\Users\JOSE\.alfredo\.env`:
 - `DEEPGRAM_API_KEY` — transcribe_deepgram.py
+- `ELEVENLABS_API_KEY` — elevenlabs_tts.py
+
+> **NOTA:** Todos os vídeos gerados são em inglês (narração voiceover). Configurações default refletem isso.
 
 ## Exemplos Práticos
 
@@ -336,6 +339,101 @@ cd C:\Users\JOSE\.alfredo\.scripts & python render_from_masterfile.py --masterfi
 cd C:\Users\JOSE\.alfredo\.scripts & python render_from_masterfile.py --masterfile "masterfile.json" --method complex
 ```
 
+### storyboard_to_timeline.py
+Converte storyboard markdown em timeline HTML horizontal
+
+**Formato do storyboard:**
+```markdown
+Scene 01
+Time: 00:00-00:05
+Narration: Texto da narração
+Visual: Descrição visual
+Camera: Ângulo da câmera
+Assets: Lista de assets
+```
+
+**Básico:**
+```bash
+cd C:\Users\JOSE\.alfredo\.scripts & python storyboard_to_timeline.py "storyboard.md"
+cd C:\Users\JOSE\.alfredo\.scripts & python storyboard_to_timeline.py "storyboard.md" --output "timeline.html"
+cd C:\Users\JOSE\.alfredo\.scripts & python storyboard_to_timeline.py "storyboard.md" --title "Meu Vídeo"
+```
+
+**Edge cases:**
+```bash
+# Output em outra pasta
+cd C:\Users\JOSE\.alfredo\.scripts & python storyboard_to_timeline.py "storyboard.md" --output "C:\Users\JOSE\alfredo\canal1\timeline.html"
+
+# Caminho relativo
+cd C:\Users\JOSE\.alfredo\.scripts & python storyboard_to_timeline.py "..\canal1\videos\test\storyboard.md"
+```
+
+### elevenlabs_tts.py
+Gera áudio Text-to-Speech usando ElevenLabs API. Lê API key de `~/.alfredo/.env`.
+
+**Básico:**
+```bash
+# Texto direto
+cd C:\Users\JOSE\.alfredo\.scripts & python elevenlabs_tts.py --text "Olá mundo" --voice rachel
+
+# De arquivo .md com SSML
+cd C:\Users\JOSE\.alfredo\.scripts & python elevenlabs_tts.py --input script.md --output audio.mp3
+
+# Output automático em diretório
+cd C:\Users\JOSE\.alfredo\.scripts & python elevenlabs_tts.py --input script.md --output-dir "./output"
+
+# Modo interativo
+cd C:\Users\JOSE\.alfredo\.scripts & python elevenlabs_tts.py --interactive
+```
+
+**SSML suportado (pausas, ênfase):**
+```markdown
+Texto com pause.<break time="1s" />
+Outro texto.<break time="0.5s" />
+```
+
+**Flags principais:**
+| Flag | Descrição | Default |
+|------|-----------|---------|
+| `--text`, `-t` | Texto para converter | - |
+| `--input`, `-i` | Arquivo de entrada (.txt, .md) | - |
+| `--output`, `-o` | Arquivo de saída | output.mp3 |
+| `--output-dir`, `-d` | Diretório de saída (nome derivado do input) | - |
+| `--voice`, `-v` | Nome da voz ou ID | rachel |
+| `--model`, `-m` | Modelo | eleven_multilingual_v2 |
+
+**Voice settings:**
+| Flag | Descrição | Default |
+|------|-----------|---------|
+| `--stability` | Estabilidade 0-1 | 0.5 |
+| `--similarity` | Similaridade 0-1 | 0.75 |
+| `--style` | Estilo 0-1 | 0.0 |
+| `--no-boost` | Desabilitar speaker boost | False |
+| `--seed` | Seed determinística | - |
+
+**Listagens:**
+```bash
+# Vozes disponíveis
+cd C:\Users\JOSE\.alfredo\.scripts & python elevenlabs_tts.py --list-voices
+
+# Modelos disponíveis
+cd C:\Users\JOSE\.alfredo\.scripts & python elevenlabs_tts.py --list-models
+
+# Formatos de saída
+cd C:\Users\JOSE\.alfredo\.scripts & python elevenlabs_tts.py --list-formats
+```
+
+**Vozes populares:**
+| Nome | Descrição |
+|------|-----------|
+| rachel | Feminino, americano, suave |
+| drew | Masculino, americano, profundo |
+| mimi | Feminino, expressivo |
+| emily | Feminino, americano |
+| katie | Feminino, americano |
+| josh | Masculino, americano |
+| adam | Masculino, jovem |
+
 ## Lista de Scripts
 
 | Script | Função |
@@ -353,8 +451,10 @@ cd C:\Users\JOSE\.alfredo\.scripts & python render_from_masterfile.py --masterfi
 | `update_workflow_config.py` | Auto-gera workflow_config.json |
 | `build_masterfile.py` | Gera masterfile.json (sync imagens + áudio + timestamps) |
 | `render_from_masterfile.py` | Renderiza vídeo com FFmpeg via masterfile.json |
+| `storyboard_to_timeline.py` | Converte storyboard markdown em timeline HTML horizontal |
 | `utils.py` | Utilitários ComfyUI (server, websocket, IO) |
 | `advanced_keyword_researcher.py` | Análise de nicho YouTube (wrapper CLI) |
+| `elevenlabs_tts.py` | Gera áudio TTS via ElevenLabs API |
 
 ## Subdiretórios
 
