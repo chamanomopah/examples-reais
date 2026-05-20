@@ -66,27 +66,67 @@ def get_image_task_status(task_id: str, api_key: str) -> dict:
     return data.get("data", {})
 
 
-def wait_for_image_task(task_id: str, api_key: str, interval: int = 5, max_wait: int = 180) -> dict:
-    """Poll image task status until completion"""
-    start = time.time()
-    while time.time() - start < max_wait:
-        status = get_image_task_status(task_id, api_key)
-        task_state = status.get("state", "")
+def wait_for_image_task(task_id: str, api_key: str, interval: int = 5, max_wait: int = 30) -> dict:
+    """Poll image task status until completion with retry on timeout"""
 
-        if task_state == "success":
-            # Parse resultJson to get URLs
-            result_json = status.get("resultJson")
-            if result_json:
-                result_data = json.loads(result_json)
-                status["resultUrls"] = result_data.get("resultUrls", [])
-            return status
-        if task_state == "failed":
-            raise Exception(f"Task failed: {status.get('failMsg', 'Unknown')}")
+    def is_fatal_error(msg: str) -> bool:
+        """Check if error is fatal (no retry)"""
+        msg_lower = msg.lower()
+        return any(x in msg_lower for x in ["insufficient credits", "api key", "unauthorized", "invalid key"])
 
-        print(f"  Status: {task_state} ({int(time.time() - start)}s)")
-        time.sleep(interval)
+    def poll_with_timeout() -> dict:
+        """Internal poll with timeout"""
+        start = time.time()
+        while time.time() - start < max_wait:
+            status = get_image_task_status(task_id, api_key)
+            task_state = status.get("state", "")
 
-    raise Exception("Task timeout")
+            if task_state == "success":
+                # Parse resultJson to get URLs
+                result_json = status.get("resultJson")
+                if result_json:
+                    result_data = json.loads(result_json)
+                    status["resultUrls"] = result_data.get("resultUrls", [])
+                return status
+            if task_state == "failed":
+                fail_msg = status.get('failMsg', 'Unknown')
+                if is_fatal_error(fail_msg):
+                    raise Exception(f"Fatal error: {fail_msg}")
+                raise Exception(f"Task failed: {fail_msg}")
+
+            print(f"  Status: {task_state} ({int(time.time() - start)}s)")
+            time.sleep(interval)
+        return None  # Timeout
+
+    # Main loop with retry
+    max_retries = 3
+    retry_delay = 15
+
+    for attempt in range(max_retries):
+        try:
+            result = poll_with_timeout()
+            if result:
+                return result
+            # Timeout occurred
+            if attempt < max_retries - 1:
+                print(f"  Timeout, waiting {retry_delay}s before retry {attempt + 2}/{max_retries}...")
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+            else:
+                raise Exception(f"Task timeout after {max_retries} retries")
+        except Exception as e:
+            error_msg = str(e)
+            if is_fatal_error(error_msg):
+                raise  # Fatal error, no retry
+            if "timeout" in error_msg.lower() or "waiting" in error_msg.lower():
+                if attempt < max_retries - 1:
+                    print(f"  {error_msg}, retrying in {retry_delay}s...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                else:
+                    raise
+            else:
+                raise  # Other errors, propagate immediately
 
 
 def generate_nano_banana_image(
@@ -182,7 +222,8 @@ def upload_image_to_kie(image_path: str, api_key: str) -> str:
     filename = Path(image_path).name
 
     # Upload via base64 endpoint
-    upload_url = "https://api.kie.ai/api/file-base64-upload"
+    # Note: KIE AI changed base URL to https://kieai.redpandaai.co
+    upload_url = "https://kieai.redpandaai.co/api/file-base64-upload"
     payload = {
         "base64Data": f"data:{mime_type};base64,{base64_data}",
         "uploadPath": "images/nano-banana",
@@ -196,7 +237,6 @@ def upload_image_to_kie(image_path: str, api_key: str) -> str:
         timeout=60
     )
     data = resp.json()
-    print(f"  Upload response: {data}")
     if not data.get("success"):
         raise Exception(f"Upload failed: {data.get('msg')} | Full response: {data}")
 
@@ -305,26 +345,42 @@ def process_batch(
 
         for idx, ingredient_id, task_id in tasks:
             print(f"Waiting for {ingredient_id}...")
-            try:
-                result = wait_for_image_task(task_id, api_key)
-                image_url = result.get("resultUrls", [""])[0]
+            max_item_retries = 2
+            item_retry_delay = 15
 
-                if image_url:
-                    output_path = ref_dir / f"{ingredient_id}.png"
-                    if download_image(image_url, output_path):
-                        results[ingredient_id] = {
-                            "task_id": task_id,
-                            "image_path": str(output_path),
-                            "status": "completed"
-                        }
+            for item_attempt in range(max_item_retries + 1):
+                try:
+                    result = wait_for_image_task(task_id, api_key)
+                    image_url = result.get("resultUrls", [""])[0]
+
+                    if image_url:
+                        output_path = ref_dir / f"{ingredient_id}.png"
+                        if download_image(image_url, output_path):
+                            results[ingredient_id] = {
+                                "task_id": task_id,
+                                "image_path": str(output_path),
+                                "status": "completed"
+                            }
+                        else:
+                            results[ingredient_id] = {"task_id": task_id, "status": "download_failed"}
                     else:
-                        results[ingredient_id] = {"task_id": task_id, "status": "download_failed"}
-                else:
-                    results[ingredient_id] = {"task_id": task_id, "status": "no_url"}
+                        results[ingredient_id] = {"task_id": task_id, "status": "no_url"}
+                    break  # Success, exit retry loop
 
-            except Exception as e:
-                print(f"  ERROR: {e}")
-                results[ingredient_id] = {"task_id": task_id, "error": str(e)}
+                except Exception as e:
+                    error_msg = str(e)
+                    # Check if fatal error
+                    is_fatal = any(x in error_msg.lower() for x in ["insufficient credits", "api key", "unauthorized", "invalid key"])
+                    is_timeout = "timeout" in error_msg.lower()
+
+                    if is_fatal or item_attempt >= max_item_retries or not is_timeout:
+                        print(f"  ERROR: {e}")
+                        results[ingredient_id] = {"task_id": task_id, "error": str(e)}
+                        break
+                    else:
+                        print(f"  Timeout, retrying in {item_retry_delay}s...")
+                        time.sleep(item_retry_delay)
+                        item_retry_delay *= 2
 
     return results
 

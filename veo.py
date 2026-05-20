@@ -101,19 +101,63 @@ def get_download_url(file_url: str, api_key: str) -> str:
     return data.get("data", "")
 
 
-def wait_for_task(task_id: str, api_key: str, interval: int = 10, max_wait: int = 600) -> dict:
-    """Poll task status until completion"""
-    start = time.time()
-    while time.time() - start < max_wait:
-        status = get_task_status(task_id, api_key)
+def is_fatal_error(error_msg: str) -> bool:
+    """Check if error is fatal (credits/auth) vs retryable (timeout)"""
+    error_lower = error_msg.lower()
+    fatal_patterns = ["insufficient credits", "api key", "unauthorized", "forbidden", "invalid key"]
+    return any(pattern in error_lower for pattern in fatal_patterns)
 
-        if status.get("status") == "succeeded":
-            return status
-        if status.get("status") == "failed":
-            raise Exception(f"Task failed: {status.get('errorMsg', 'Unknown')}")
 
-        print(f"  Status: {status.get('status')} ({int(time.time() - start)}s)")
-        time.sleep(interval)
+def wait_for_task(task_id: str, api_key: str, interval: int = 10, max_wait: int = 300) -> dict:
+    """Poll task status until completion with retry logic
+
+    After timeout, retries up to 3 times with 15s delay between attempts.
+    Fatal errors (credits, auth) stop immediately.
+    """
+    retry_attempts = 0
+    max_retries = 3
+    retry_delay = 15
+
+    while retry_attempts <= max_retries:
+        start = time.time()
+        attempt_label = f" (retry {retry_attempts}/{max_retries})" if retry_attempts > 0 else ""
+
+        try:
+            while time.time() - start < max_wait:
+                try:
+                    status = get_task_status(task_id, api_key)
+                except Exception as e:
+                    error_msg = str(e)
+                    if is_fatal_error(error_msg):
+                        raise Exception(f"Fatal error: {error_msg}")
+                    print(f"  API error (will retry): {e}")
+                    time.sleep(interval)
+                    continue
+
+                if status.get("status") == "succeeded":
+                    return status
+                if status.get("status") == "failed":
+                    raise Exception(f"Task failed: {status.get('errorMsg', 'Unknown')}")
+
+                print(f"  Status: {status.get('status')}{attempt_label} ({int(time.time() - start)}s)")
+                time.sleep(interval)
+
+            # Timeout reached
+            if retry_attempts < max_retries:
+                retry_attempts += 1
+                print(f"  Timeout ({max_wait}s). Retrying in {retry_delay}s... (attempt {retry_attempts}/{max_retries})")
+                time.sleep(retry_delay)
+            else:
+                raise Exception(f"Task timeout after {max_retries} retries ({max_wait * (max_retries + 1)}s total)")
+
+        except Exception as e:
+            if is_fatal_error(str(e)):
+                raise
+            if retry_attempts >= max_retries:
+                raise
+            retry_attempts += 1
+            print(f"  Error: {e}. Retrying in {retry_delay}s... (attempt {retry_attempts}/{max_retries})")
+            time.sleep(retry_delay)
 
     raise Exception("Task timeout")
 
@@ -355,17 +399,33 @@ def process_batch_results(
 
         # Wait for completion if pending
         if status == "pending":
-            try:
-                print(f"  Waiting for completion...")
-                task_result = wait_for_task(task_id, api_key, interval, max_wait)
-                result["status"] = task_result.get("status")
-                result["result_url"] = get_video_url_from_result(task_result)
-                print(f"  Status: {result['status']}")
-            except Exception as e:
-                result["status"] = "failed"
-                result["error"] = str(e)
-                print(f"  ERROR: {e}")
-                continue
+            retry_count = 0
+            max_retries = 3
+            while retry_count <= max_retries:
+                try:
+                    print(f"  Waiting for completion...")
+                    task_result = wait_for_task(task_id, api_key, interval, max_wait)
+                    result["status"] = task_result.get("status")
+                    result["result_url"] = get_video_url_from_result(task_result)
+                    print(f"  Status: {result['status']}")
+                    break
+                except Exception as e:
+                    error_msg = str(e)
+                    if is_fatal_error(error_msg):
+                        result["status"] = "failed"
+                        result["error"] = error_msg
+                        print(f"  FATAL ERROR: {e}")
+                        break
+
+                    retry_count += 1
+                    if retry_count > max_retries:
+                        result["status"] = "failed"
+                        result["error"] = error_msg
+                        print(f"  ERROR: {e}")
+                        break
+
+                    print(f"  Timeout on attempt {retry_count}. Retrying in 15s...")
+                    time.sleep(15)
 
         # Download if succeeded
         if download and result.get("status") == "succeeded":
@@ -530,17 +590,17 @@ Examples:
                 )
                 print(f"Task ID: {task_id}")
 
-                if args.wait or args.p or args.p:
+                if args.wait or args._1080p or args._4k:
                     result = wait_for_task(task_id, api_key)
                     print(f"Status: {result.get('status')}")
                     print(f"Result: {get_video_url_from_result(result)}")
 
-                    if args.p and args.ratio == "16:9":
+                    if args._1080p and args.ratio == "16:9":
                         print("Upgrading to 1080p...")
                         hd_id = get_veo3_1080p_video(task_id, api_key)
                         print(f"1080p Task ID: {hd_id}")
 
-                    if args.p and args.ratio == "16:9":
+                    if args._4k and args.ratio == "16:9":
                         print("Upgrading to 4K...")
                         fourk_id = get_veo3_4k_video(task_id, api_key)
                         print(f"4K Task ID: {fourk_id}")
@@ -615,10 +675,23 @@ Examples:
                         }
 
                         if args.wait or args.download:
-                            result = wait_for_task(task_id, api_key)
-                            result_entry["status"] = result.get("status")
-                            result_entry["result_url"] = get_video_url_from_result(result)
-                            print(f"  Result: {get_video_url_from_result(result)}")
+                            retry_count = 0
+                            max_retries = 3
+                            while retry_count <= max_retries:
+                                try:
+                                    result = wait_for_task(task_id, api_key)
+                                    result_entry["status"] = result.get("status")
+                                    result_entry["result_url"] = get_video_url_from_result(result)
+                                    print(f"  Result: {get_video_url_from_result(result)}")
+                                    break
+                                except Exception as e:
+                                    if is_fatal_error(str(e)):
+                                        raise
+                                    retry_count += 1
+                                    if retry_count > max_retries:
+                                        raise
+                                    print(f"  Timeout on attempt {retry_count}. Retrying in 15s...")
+                                    time.sleep(15)
 
                             # Download if requested
                             if args.download and result.get("status") == "succeeded":
