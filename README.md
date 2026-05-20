@@ -15,15 +15,20 @@ cd C:\Users\JOSE\.alfredo\.scripts & python <script>.py [args]
 
 ## Dependências
 
+**Python:**
 - `yt-dlp` — scraper e download
 - `youtube-transcript-api` — transcrições
 - `opencv-python` — extração de frames
 - `requests` + `websockets` — integração ComfyUI
 - `deepgram-sdk` — transcrição com timestamps
 
+**Bun:**
+- (nenhum script TypeScript atualmente)
+
 API keys em `C:\Users\JOSE\.alfredo\.env`:
 - `DEEPGRAM_API_KEY` — transcribe_deepgram.py
 - `ELEVENLABS_API_KEY` — elevenlabs_tts.py
+- `KIE_AI_API_KEY` — banana.py, veo.py
 
 > **NOTA:** Todos os vídeos gerados são em inglês (narração voiceover). Configurações default refletem isso.
 
@@ -340,17 +345,38 @@ cd C:\Users\JOSE\.alfredo\.scripts & python render_from_masterfile.py --masterfi
 ```
 
 ### storyboard_to_timeline.py
-Converte storyboard markdown em timeline HTML horizontal
+Converte storyboard markdown em timeline HTML horizontal com 3 camadas
 
-**Formato do storyboard:**
+**Formato do storyboard (3 sub-camadas por Scene):**
 ```markdown
 Scene 01
-Time: 00:00-00:05
-Narration: Texto da narração
-Visual: Descrição visual
-Camera: Ângulo da câmera
-Assets: Lista de assets
+Time: 00:00:00.000 - 00:00:15.000
+Narration: ...
+
+Layer 1 - A-Roll:
+  Type: ai_video
+  Visual: ...
+  Camera: ...
+  Assets: ...
+
+Layer 2 - B-Roll GFX:
+  (vazio se não houver)
+
+Layer 3 - Overlay:
+  Type: lower_third
+  Visual: ...
+  TimeIn: 00:00:06.800
+  TimeOut: 00:00:10.500
 ```
+
+**Regras de camadas:**
+| Combinação | Válido? |
+|------------|---------|
+| A-Roll alone | ✅ |
+| A-Roll + Overlay | ✅ |
+| B-Roll alone | ✅ |
+| B-Roll + Overlay | ❌ Overlay depende de A-Roll |
+| Todas as 3 juntas | ❌ |
 
 **Básico:**
 ```bash
@@ -358,6 +384,12 @@ cd C:\Users\JOSE\.alfredo\.scripts & python storyboard_to_timeline.py "storyboar
 cd C:\Users\JOSE\.alfredo\.scripts & python storyboard_to_timeline.py "storyboard.md" --output "timeline.html"
 cd C:\Users\JOSE\.alfredo\.scripts & python storyboard_to_timeline.py "storyboard.md" --title "Meu Vídeo"
 ```
+
+**Validação:**
+O script valida combinações de camadas e lança erro se:
+- Layer 3 (Overlay) existe sem Layer 1 (A-Roll)
+- Layer 2 (B-Roll) tem Overlay
+- Todas as 3 camadas juntas
 
 **Edge cases:**
 ```bash
@@ -367,6 +399,149 @@ cd C:\Users\JOSE\.alfredo\.scripts & python storyboard_to_timeline.py "storyboar
 # Caminho relativo
 cd C:\Users\JOSE\.alfredo\.scripts & python storyboard_to_timeline.py "..\canal1\videos\test\storyboard.md"
 ```
+
+### storyboard_to_remotion.py
+Converte storyboard markdown em projeto Remotion completo (React + TypeScript)
+
+**Formato do storyboard:**
+```markdown
+Scene 01
+Time: 00:00:00.000 - 00:00:05.000
+Type: ai_video | gfx_persistent | gfx_insert
+Layer: 1 | 2
+Narration: Texto da narração
+Visual: Descrição visual
+Camera: Ângulo da câmera
+Assets: Lista de assets
+```
+
+**Básico:**
+```bash
+cd C:\Users\JOSE\.alfredo\.scripts & python storyboard_to_remotion.py "storyboard.md"
+cd C:\Users\JOSE\.alfredo\.scripts & python storyboard_to_remotion.py "storyboard.md" --output "meu_projeto"
+cd C:\Users\JOSE\.alfredo\.scripts & python storyboard_to_remotion.py "storyboard.md" --fps 60
+```
+
+**Estrutura gerada:**
+```
+meu_projeto/
+├── src/
+│   ├── index.ts                    # Ponto de entrada
+│   ├── Root.tsx                    # Registro de composições
+│   ├── types/storyboard.d.ts       # Tipos TypeScript
+│   ├── compositions/Storyboard.tsx # Componente visual
+│   └── data/storyboard.json        # Dados das cenas
+├── out/                            # Output de renders
+├── package.json
+├── tsconfig.json
+└── remotion.config.ts
+```
+
+**Usar o projeto gerado:**
+```bash
+cd meu_projeto
+bun install
+bun start     # Abre Remotion Studio (http://localhost:3000)
+bun run build # Renderiza vídeo
+```
+
+**Layers:**
+- `Layer: 1` ou `Type: ai_video/gfx_persistent` → A-roll (base)
+- `Layer: 2` ou `Type: gfx_insert` → B-roll (overlay)
+
+**Edge cases:**
+```bash
+# FPS customizado (default: 30)
+cd C:\Users\JOSE\.alfredo\.scripts & python storyboard_to_remotion.py "storyboard.md" --fps 60
+
+# Output em caminho absoluto
+cd C:\Users\JOSE\.alfredo\.scripts & python storyboard_to_remotion.py "storyboard.md" --output "C:\Users\JOSE\alfredo\canal1\videos\test\remotion"
+```
+
+### banana.py
+Geração de imagens com Nano Banana 2 (Gemini 3.1 Flash Image).
+
+**Requisitos:** Python 3.10+, API key em `KIE_AI_API_KEY` do `.env`.
+
+```bash
+# Saldo de créditos
+python banana.py credits
+
+# Gerar imagem
+python banana.py image "a cat in space" --ratio 16:9 --res 2K
+
+# Gerar e esperar resultado
+python banana.py image "a cat in space" --wait --output image.png
+```
+
+**Flags:**
+| Flag | Opções |
+|------|--------|
+| `--ratio` | auto, 1:1, 3:2, 2:3, 16:9, 9:16 |
+| `--res` | 1K, 2K, 4K |
+| `--fmt` | png, jpg, webp |
+| `--wait` | Aguarda conclusão |
+| `--output` | Salvar imagem em caminho específico |
+
+### veo.py
+Geração de vídeos com Veo 3.1 (Fast/Quality).
+
+**Requisitos:** Python 3.10+, API key em `KIE_AI_API_KEY` do `.env`.
+
+```bash
+# Saldo de créditos
+python veo.py credits
+
+# Gerar vídeo do texto (Veo 3.1 Fast)
+python veo.py video "a dog playing in a park" --fast
+
+# Imagem para vídeo
+python veo.py video "make the person wave" --image https://example.com/img.jpg
+
+# First/Last frames (transição)
+python veo.py video "transition" --first frame1.jpg --last frame2.jpg
+
+# Ingredients/Materiais (1-3 referências)
+python veo.py video "character in this style" --ingredients char.jpg style.jpg bg.jpg
+
+# Status da tarefa
+python veo.py status abc123
+
+# Link de download
+python veo.py download "https://storage.kie.ai/..."
+```
+
+**Flags de vídeo:**
+| Flag | Descrição |
+|------|-----------|
+| `--fast` | Usa modelo veo3_fast (rápido, barato) |
+| `--quality` | Usa modelo veo3 (alta qualidade) |
+| `--ratio` | 16:9, 9:16, Auto |
+| `--image URL` | Imagem única (image-to-video) |
+| `--first URL --last URL` | Primeiro e último frame (transição) |
+| `--ingredients URL...` | 1-3 imagens de referência (estilo/personagem) |
+| `--seeds N` | Seed 10000-99999 (reprodutibilidade) |
+| `--wait` | Aguarda conclusão da tarefa |
+| `--1080p` | Upgrade para 1080p após conclusão |
+| `--4k` | Upgrade para 4K após conclusão |
+| `--no-translate` | Desabilita tradução automática |
+
+**Modos de geração de vídeo:**
+| Modo | Imagens | Descrição |
+|------|--------|-----------|
+| `TEXT_2_VIDEO` | 0 | Prompt texto apenas |
+| `FIRST_AND_LAST_FRAMES_2_VIDEO` | 1-2 | 1 imagem = animar imagem; 2 imagens = transição entre frames |
+| `REFERENCE_2_VIDEO` | 1-3 | Ingredients/materiais para estilo e personagem (veo3_fast only) |
+
+### Imagens Base
+Imagens low-poly 3D para consistência de estilo em `~/.alfredo/.templates/images_base/`:
+
+| Arquivo | Categoria |
+|---------|-----------|
+| `humans_base.png` | Humanos |
+| `objects_base.png` | Objetos |
+| `vehicles_base.png` | Veículos |
+| `environments_base.png` | Cenários |
 
 ### elevenlabs_tts.py
 Gera áudio Text-to-Speech usando ElevenLabs API. Lê API key de `~/.alfredo/.env`.
@@ -452,9 +627,12 @@ cd C:\Users\JOSE\.alfredo\.scripts & python elevenlabs_tts.py --list-formats
 | `build_masterfile.py` | Gera masterfile.json (sync imagens + áudio + timestamps) |
 | `render_from_masterfile.py` | Renderiza vídeo com FFmpeg via masterfile.json |
 | `storyboard_to_timeline.py` | Converte storyboard markdown em timeline HTML horizontal |
+| `storyboard_to_remotion.py` | Converte storyboard markdown em projeto Remotion completo |
 | `utils.py` | Utilitários ComfyUI (server, websocket, IO) |
 | `advanced_keyword_researcher.py` | Análise de nicho YouTube (wrapper CLI) |
 | `elevenlabs_tts.py` | Gera áudio TTS via ElevenLabs API |
+| `banana.py` | Geração de imagens (Nano Banana 2) |
+| `veo.py` | Geração de vídeos (Veo 3.1 Fast/Quality) |
 
 ## Subdiretórios
 
